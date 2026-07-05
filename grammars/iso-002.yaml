@@ -1,0 +1,164 @@
+# Grammar sheet: iso/studio-build (002)
+#
+# Audit reconstruction from Pattern Grammar Audit 002. status is
+# audit-reconstruction, NOT enrolled: this is methodology validation on a public
+# identity, and only the brand owner may commit, sign and enrol (spec 6.2,
+# audit 002 preamble). Values cite their audit source.
+#
+# The point this sheet demonstrates: the identity's structure sits on canonical
+# peaks (square grid, duty 1/2, 45deg steps, multiply blend -- audit s6), so it
+# keeps that canonical structure at weight 0 (verification only) and carries all
+# identification in its inks. It therefore VALIDATES under the canonical-peak
+# rule -- exactly because the peaks bear no identification weight.
+
+spec_version: "0.1"
+
+sheet:
+  id: iso-002
+  name: ISO (Studio.Build) -- audit reconstruction
+  grammar_version: "0.0.0"     # reconstruction, not an owner-committed version
+  status: audit-reconstruction
+  issuer: null                 # not enrolled; the owner alone may issue
+  identity_endpoint: null
+
+ground:
+  substrate: white             # audit s2: white, consistently -- the ink system needs it
+
+structure:
+  type: grid                   # audit s2: one dominant square lattice per variant
+  grid:
+    module: M                  # square module (measured 69-72 px; declared relative)
+    scales: [1M, 2M]           # audit s2: structure recurs at integer cell multiples
+
+primitive_alphabet:
+  # Five primitives, all dimensions in modules M (audit s2 primitive table).
+  - id: filled_cell
+    form: filled square cell, 1M x 1M
+  - id: inscribed_circle
+    form: inscribed circle, diameter 1M or 2M
+  - id: stripe_bar
+    form: horizontal stripe, height M/2, pitch 1M, duty 0.5
+  - id: staircase_diagonal
+    form: staircase of 1M x 1M steps (45 degrees in cells)
+  - id: rounded_cap
+    form: stadium bar / quarter-round, radius M/2
+
+combination_rules:
+  # audit s2 / s4: primitives placed on the grid at 1M or 2M scale.
+  scales: [1M, 2M]
+  stripe_rhythm:
+    pitch: 1M                  # audit s2: stripe sub-rhythm at exactly half-module
+    duty: 0.5
+    orientation: horizontal
+  overprint_rule: multiply     # audit s2: multiply overprint, verified exact (c1*c2/255)
+
+colour_system:
+  space: sRGB-hex
+  inks:
+    # The master ink set (audit s4). Nine specific values -- the address that
+    # carries identification (audit s6 point 1).
+    - id: yellow
+      value: "#FAFF54"
+    - id: teal
+      value: "#479F8C"
+    - id: magenta
+      value: "#D52EB2"
+    - id: blue
+      value: "#3B87F7"
+    - id: green
+      value: "#75FB63"
+    - id: red
+      value: "#C5111D"
+    - id: orange
+      value: "#EC5F2A"
+    - id: light_blue
+      value: "#95C3F9"
+    - id: teal_grey
+      value: "#96CBC4"
+  layering: multiply           # audit s2: flat spot inks, multiply overprint
+  relationships:
+    # Committed as orderings/consistencies, not absolute values: colour-led
+    # signatures are print-fragile (audit s6), so relationships survive lighting
+    # and reproduction where absolutes do not (spec 3.5).
+    - "overlap(a, b) == multiply(a, b)   # c1*c2/255, verified exact (audit s2)"
+    - "inks drawn from the master set; each variant speaks a subset (audit s3)"
+    - "ground(white) lightest; every ink darkens under multiply overprint"
+
+variation_model:
+  # audit s3-s4: dialects vary, genome is invariant.
+  varies:
+    - ink_subset
+    - composition
+    - density
+  invariant:
+    - grid
+    - alphabet
+    - stripe_rhythm
+    - overprint_rule
+    - ground
+
+signature_locus:
+  # audit s6: after discounting canonical structure, the ink set carries the load;
+  # the primitive/composition mix carries the rest but is unmeasured here.
+  features:
+    - id: ink_set
+      measure: ink_set_match
+      expected:                # the master ink set (audit s4)
+        - "#FAFF54"
+        - "#479F8C"
+        - "#D52EB2"
+        - "#3B87F7"
+        - "#75FB63"
+        - "#C5111D"
+        - "#EC5F2A"
+        - "#95C3F9"
+        - "#96CBC4"
+      tolerance:
+        delta_e: 10
+      role: identification
+      weight: 0.75             # audit s6 point 1: the inks are the address
+      sample_unit: inks_observed
+      status: measured
+
+    - id: primitive_frequency_mix
+      measure: primitive_frequency_mix
+      expected: null           # audit s6 point 2 names it, publishes no proportions
+      tolerance: null
+      role: identification
+      weight: 0.25             # weight reserved; see SPEC-ISSUES SI-008
+      sample_unit: primitives_observed
+      status: unmeasured       # recogniser skips and renormalises at runtime
+
+    - id: grid_module
+      measure: grid_module_detect
+      role: normalisation      # anchors scale; identifies nothing (SI-006)
+      weight: 0
+      sample_unit: cells
+      status: measured
+
+    - id: stripe_rhythm
+      measure: stripe_duty
+      role: verification        # audit s6: canonical peak, verification not identification
+      weight: 0
+      sample_unit: striped_regions
+      canonical_peaks: [0.5]    # duty 1/2 is a canonical peak (spec 3.7)
+      status: measured
+
+    - id: staircase_diagonal
+      measure: staircase_step_angle
+      role: verification
+      weight: 0
+      sample_unit: diagonals
+      canonical_peaks: [45]     # 45deg is a canonical peak (spec 3.7)
+      status: measured
+
+    - id: overprint_consistency
+      measure: overprint_multiply_consistency
+      role: verification        # audit s5: "verification, not identification"
+      weight: 0
+      sample_unit: overlaps
+      status: measured
+
+  aggregation:
+    method: weighted_sum        # identification weights renormalise over measured features
+    min_features: 1

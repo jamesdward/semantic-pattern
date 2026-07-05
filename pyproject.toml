@@ -21,7 +21,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["generator", "recogniser", "battery"]
+packages = ["generator", "recogniser", "battery", "sheets"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

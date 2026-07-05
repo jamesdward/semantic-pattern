@@ -1,0 +1,129 @@
+# Grammar sheet: bar-cascade/001
+#
+# Enrolled TUNED values from Pattern Grammar Audit 001, section 4. The audit
+# recovered the grammar (section 1-2), assessed it (section 3), then tuned three
+# values off their canonical peaks (section 4) so the conjunction becomes
+# ownable. This sheet is status: enrolled because it is our own test identity --
+# we may commit and sign it (spec 6.2). Every value below cites its audit source.
+
+spec_version: "0.1"
+
+sheet:
+  id: bar-cascade-001
+  name: Bar Cascade 001
+  grammar_version: "1.0.0"
+  status: enrolled            # our own identity; we may enrol it (spec 6.2)
+  issuer: null                # enrolment mechanics deferred (SI-004)
+  identity_endpoint: null
+
+ground:
+  substrate: white            # colour/contrast reference (spec 3.1)
+
+structure:
+  type: band                  # audit 001 s1: vertical bands of horizontal bars
+  band:
+    # Fixed module: interior band width constant across the sample (audit s1,
+    # "191-192 px" at sample scale). Declared relative -- the module is the unit.
+    module_width_relative: 1.0
+    bands_visible: 5          # audit s1: five bands, outer two cropped
+    bar_orientation: horizontal
+    # Cascade runs one way (periods increase left to right); the direction plus
+    # the tuned 0.7deg offset anchor orientation (audit s1; SI-005).
+    cascade_direction: increasing_period
+
+primitive_alphabet:
+  - id: horizontal_bar
+    form: horizontal bar spanning the band width   # audit s1: the sole element
+
+combination_rules:
+  # The cascade constants. Tuned values from audit 001 section 4.
+  frequency_ratio: 1.94        # audit s4: 2.00 -> 1.94, off the power-of-two peak
+  duty_cycle_light: 0.31       # audit s4: 1/3 -> 0.31, off the 1/3 peak
+  phase_step: 0.31             # audit s4: per-band offset, fraction of finer period
+  # The hidden elegance (audit s3): one constant governs bar proportion AND
+  # stagger. phase_step == duty_cycle_light is the relational fingerprint, scored
+  # by the phase_duty_identity locus feature below.
+  phase_duty_rule: phase_step == duty_cycle_light
+  orientation_deg: 0.7         # audit s4 (optional): kills rotation/stripe-world collisions
+  colour_area_ratio_dark_light: 2.23  # audit s4: area mass slaved to duty (1-0.31)/0.31
+
+colour_system:
+  space: sRGB-hex
+  inks:
+    - id: dark
+      value: "#2E5B30"         # audit s1 colour: (46, 91, 48)
+    - id: light
+      value: "#73B881"         # audit s1 colour: (115, 184, 129)
+  layering: opaque             # two-colour classification, no overprint (audit method)
+  relationships:
+    # Committed relationships survive reproduction where absolute values may not
+    # (spec 3.5). Sourced from audit 001 s1 (colour) and s4 (area slaved to duty).
+    - "luminance(light) > luminance(dark)"
+    - "hue(dark) ~= hue(light)"
+    - "area_ratio(dark:light) slaved to duty_cycle_light"
+
+variation_model:
+  # A single static pattern in the audit; the declared dialect space (spec 3.6,
+  # audit 001 s5 step 4) offers per-product duty and per-era ratio revisions.
+  varies:
+    - duty_cycle_light
+    - frequency_ratio
+  invariant:
+    - structure
+    - primitive_alphabet
+    - phase_duty_rule
+    - ground
+
+signature_locus:
+  # Where identification lives (spec 3.7). Audit 001 s3-s4: the signature is in
+  # the ratio system, and the phase = duty identity is the distinctive relation.
+  features:
+    - id: cascade_ratio
+      measure: period_cascade_ratio
+      expected: 1.94           # audit s4 tuned value
+      tolerance: 0.03
+      role: identification
+      weight: 0.30
+      sample_unit: band_boundaries   # n = boundaries the fragment spans (audit s3)
+      canonical_peaks: [2.0, 1.5, 1.618]   # spec 3.7 peaks; 1.94 sits off all of them
+      status: measured
+
+    - id: duty
+      measure: duty_cycle
+      expected: 0.31           # audit s4 tuned value
+      tolerance: 0.015
+      role: identification
+      weight: 0.20
+      sample_unit: periods     # n = periods observed
+      canonical_peaks: [0.5, 0.333, 0.25]  # spec 3.7 peaks; 0.31 sits off 1/3
+      status: measured
+
+    - id: phase_duty_identity
+      measure: relation_equal  # relational: phase step equals the duty cycle
+      operands: [phase_step, duty_cycle_light]   # both defined in combination_rules
+      tolerance: 0.02
+      role: identification
+      weight: 0.30             # audit s3: the second-order distinctive fingerprint
+      sample_unit: band_boundaries
+      status: measured
+
+    - id: colour_pair
+      measure: ink_set_match
+      expected: ["#2E5B30", "#73B881"]   # audit s1 colours
+      tolerance:
+        delta_e: 10
+      role: identification
+      weight: 0.20
+      sample_unit: inks_observed
+      status: measured
+
+    - id: band_module
+      measure: band_period
+      role: normalisation      # anchors scale, identifies nothing (SI-006)
+      weight: 0
+      sample_unit: bands
+      status: measured
+
+  aggregation:
+    method: weighted_sum       # per-feature agreement * weight, n-scaled (SI-001/002)
+    min_features: 1

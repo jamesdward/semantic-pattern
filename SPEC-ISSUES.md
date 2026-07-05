@@ -69,3 +69,46 @@ spec should adopt this distinction or name a better one.
 lineage) the skeleton doesn't specify. v0 sheets carry only `grammar_version`; the
 family/variation encoding will be forced by Milestone 2 (grammar 002 dialects) and
 recorded here when it is.
+
+## SI-008 · §3.7 · decided-here — Audit 002 names an identification feature it never measured
+
+Audit 002 §6 point 2 names "the primitive mix and composition statistics — the
+proportions in which the alphabet is used" as one of the two things that carry ISO's
+identification load, but the audit publishes **no measured proportions** for it (unlike
+the ink set in point 1, which lists nine exact values). The sheet cannot declare an
+`expected` it does not have. **Choice:** `iso-002.yaml` declares the
+`primitive_frequency_mix` locus feature with `role: identification`,
+`weight: 0.25`, `expected: null` and `status: unmeasured` — the weight is *reserved*, not
+spent. The validator counts unmeasured weight in the locus sum (so the reservation is
+explicit and the sheet still sums to 1.0), and the recogniser skips unmeasured features at
+runtime and renormalises the remaining identification weights. The measurement is deferred
+to Milestone 2, when primitive-frequency extraction exists; committing the value then is a
+`grammar_version` bump, not a schema change. The spec should say how an audit records an
+identification dimension it has named but not yet quantified — reserving weight under an
+explicit `unmeasured` status is the mechanism proposed here.
+
+## SI-009 · §3.7 · decided-here — Canonical-peak rule only bites on numeric expected values
+
+Spec §3.7 lists canonical peaks as numbers (0°/45°/90°, ratios 2.0/1.5/φ, duty 1/2·1/3).
+The mechanical rejection ("expected within tolerance of a peak") is therefore only
+well-defined when a feature's `expected` is a scalar number and its `tolerance` is a scalar
+number. For non-numeric identification features — an ink *set* (002's `ink_set`, expected =
+list of hexes, tolerance = `{delta_e: 10}`) or a colour *pair* (001's `colour_pair`) — the
+declared peaks are numeric and do not apply, so the validator skips the peak check for
+them. This is correct for the shipped sheets (a specific nine-ink address is the opposite of
+a crowded default), but it means the spec has **no defined notion of a canonical peak in
+colour space** — e.g. "primary red / pure #FF0000" as a crowded ink value. Colour-space
+peaks are left for a later draft; until then the validator does not police them and the
+guard rests on honest ink choice (compare SI-003).
+
+## SI-010 · §3.4/§3.7 · decided-here — Relational operands resolve against combination_rules keys
+
+§3.7's relational fingerprint (001's `phase_step == duty_cycle`) needs its operands to name
+real declared values, but the spec does not say where a relational feature's operands are
+allowed to point. **Choice:** `relation_*` feature operands must resolve to either the id of
+another locus feature or a **key defined anywhere in `combination_rules`** (the validator
+collects those keys recursively). So 001's `phase_duty_identity` operands
+`[phase_step, duty_cycle_light]` resolve to the two constants declared in
+`combination_rules`. Operands pointing at `colour_system` inks or `structure` dimensions are
+**not** currently resolvable — no shipped feature needs that, and widening the namespace
+without a case risks masking typos. The spec should fix the operand namespace explicitly.
