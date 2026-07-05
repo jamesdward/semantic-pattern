@@ -112,3 +112,35 @@ collects those keys recursively). So 001's `phase_duty_identity` operands
 `combination_rules`. Operands pointing at `colour_system` inks or `structure` dimensions are
 **not** currently resolvable — no shipped feature needs that, and widening the namespace
 without a case risks masking typos. The spec should fix the operand namespace explicitly.
+
+## SI-011 · §3.2/§6.1 · decided-here — The finest stripe period is not a declared grammar value
+
+The sheet declares the module (band width, `module_width_relative`) and the cascade
+*ratios* (`frequency_ratio`, `duty_cycle_light`, `phase_step`), all scale-invariant. It does
+**not** declare the finest band's absolute stripe period — audit 001 measured band 0 at
+14.9 px against a 191 px band, but that 14.9/191 ≈ 0.078 is a free choice of the original
+maker, not a committed ratio, and nothing in §3 has a slot for it. A generator nonetheless
+needs a number to place the first period. **Choice:** the generator carries a single
+constant `BASE_PERIOD_RELATIVE = 0.078` (module-relative, from the audit measurement) and
+sets `base_period_px = round(BASE_PERIOD_RELATIVE * module_px)` so the finest band lands on a
+clean integer pixel count. Every coarser band follows from the declared `frequency_ratio`.
+This is a rendering choice, not a signature value (the recogniser scores ratios, never the
+absolute finest period), but the spec should decide whether a grammar of this shape ought to
+commit a `structure.base_rhythm_relative` (or similar) so two conforming generators produce
+identically-scaled surfaces from the same module. Until then, `BASE_PERIOD_RELATIVE` lives in
+`generator/cascade.py` and is documented there.
+
+## SI-012 · §8 · decided-here — Band-coordinate ground truth needs the module, absent from a bare surface
+
+Audit 001 s3 makes band-boundary count a first-class ground-truth quantity (a fragment's
+identifying power tracks how many band boundaries it spans). The fragment sampler
+(`generator/fragments.py`) records this in `FragmentInfo`, but a bare `(H, W, 3)` surface
+array carries no record of where its band boundaries are — that needs `module_px` and
+`n_bands`, which are generation parameters, not recoverable from pixels without running a
+measurement. **Choice:** `sample_fragment` takes optional keyword-only `module_px` / `n_bands`
+(defaulting to `None`); when supplied it populates the band-coordinate fields of
+`FragmentInfo`, and when absent those fields stay `None`. The battery, which generates the
+surface, always has these to hand and passes them. This keeps the sampler usable on any
+surface while making the band ground truth exact when the generation params are known. The
+spec has no notion of a surface carrying its own generation provenance; if one is added
+(compare SI-007), the module would travel with the surface and this parameter could drop.
