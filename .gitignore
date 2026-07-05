@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+build/
+dist/
+
+# OS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+
+# Scratch output (experiments/ results ARE committed — they are the published data)
+scratch/

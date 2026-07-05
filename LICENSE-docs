@@ -1,0 +1,13 @@
+The specification and audit documents in this repository (everything under
+spec/, plus SPEC-ISSUES.md and the prose reports under experiments/) are
+licensed under the Creative Commons Attribution 4.0 International licence
+(CC BY 4.0).
+
+You are free to share and adapt these documents for any purpose, including
+commercially, provided you give appropriate credit to the author (Bodkin),
+link to the licence, and indicate if changes were made.
+
+Full licence text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+All source code in this repository is separately licensed under the MIT
+licence — see the LICENSE file.
