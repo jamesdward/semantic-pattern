@@ -302,3 +302,88 @@ consequence:** the meta-grammar should state, for a multiply-overprint colour mo
 overprint is defined only pairwise and deeper stacks are out of grammar (this implementation), or
 (b) a committed n-ink compositing order + rounding so deep overlaps are themselves derivable and
 verifiable — since without one, "overlap == multiply(parents)" is ambiguous the moment three inks meet.
+
+## SI-020 · §5/§6.2 · decided-here — A relationship-mode (white-balance-robust) colour match has no defined scoring
+
+Milestone 2 requires "ink-set matching with colour measured as relationships/orderings not absolutes —
+it must survive white-balance shift", and audit 002 §6 says a print enrolment "would commit ink
+*relationships* (orderings, ratios, multiply consistency) rather than absolute values". But the spec
+defines only an **absolute** colour distance (delta-E76 against declared inks, SI-001): it names no way
+to score a match that is allowed to differ from the declared inks by a global illuminant/white-balance
+cast. **Choice made (grid family, `recogniser/measure_grid.py` + `_score_ink_grid` in `score.py`):** the
+grid ink-set match is **two-path** and the feature agreement is the **max** of
+
+  * ABSOLUTE — greedy (Hungarian-approx) assignment of measured inks to sheet inks in Lab, mean
+    clipped-linear agreement on delta-E76 / `delta_e`; and
+  * RELATIONSHIP — estimate one per-channel diagonal correction gain `g` (sRGB BGR) that maps the
+    measured inks onto the sheet inks, as the largest **consensus cluster** of per-channel
+    `sheet/measured` ratios over the assignment (`_consensus_ratio`: biggest set of ratios mutually
+    within ±5%, deterministic tie-breaks; not least squares and not a plain median, because a global
+    cast breaks the multiply overprint arithmetic, so overprint colours leak into the extracted ink set
+    and get misassigned — up to ~half the ratios can be junk, which drags a median off but cannot
+    imitate the tight cluster the true inks form). The estimate is **saturation-aware**: a channel
+    observation measured at ≥ `CLIP_HIGH=250` was (or may have been) clipped by the cast — its true
+    pre-gain value is unknowable, only a lower bound survives — and one at ≤ `CLIP_LOW=5` is
+    floored/unstable, so neither feeds the ratio pool; a channel with fewer than `MIN_GAIN_OBS=2`
+    unclipped observations falls back **neutrally to gain 1.0** with a caveat in the working (neutral,
+    not the cross-channel median, because white balance is per-channel by definition and borrowing
+    another channel's cast would fabricate a correction). Undo `g` on the full extracted palette,
+    **re-separate products in the corrected space** (where the multiply arithmetic holds again) to drop
+    the leaked overprints, and re-measure delta-E76 — scoring the clipped channels of clipped inks
+    **one-sidedly** (`_clip_aware_delta_e`): after correction a clipped channel is only a lower bound
+    on the true ink channel, so if the sheet channel is at or above that bound the observation is
+    *consistent* and the channel scores as a match (a clipped channel cannot match; that is measurement
+    loss, not identity mismatch — its contribution is capped, the ink is not zeroed), while a bound
+    already past the sheet value keeps its real mismatch. The claim's working publishes both
+    agreements, the correction gain, the *implied applied* gain (`1/g`, which recovers the white
+    balance that was applied), a `gain_in_bounds` flag, a per-channel rank correlation (a positive
+    diagonal gain is order-preserving, so high rank correlation corroborates that the ink *orderings*
+    survive), and a `clipping` block (thresholds, clipped-ink count, gain-fallback channels).
+
+Several numbers are **v0 constants, not spec values**: the gain bounds `GAIN_MIN=0.5 / GAIN_MAX=2.0` (a
+gain outside them is more than a plausible cast, so the relationship path is rejected); the credibility
+floor `MIN_INKS_FOR_GAIN=3` (a global-cast claim from one or two inks over-fits — a free per-channel
+gain plus assignment freedom can map a handful of colours onto any palette — so below it the
+relationship path is disabled, which is also what keeps cross-grammar discrimination honest: a two-ink
+001 band fragment cannot borrow the grid ink-set's leniency); the saturation constants
+`CLIP_HIGH=250 / CLIP_LOW=5 / MIN_GAIN_OBS=2` and the consensus window `GAIN_CONSENSUS_REL_TOL=0.05`;
+and the two-path combinator itself (taking the **max**). The `max` is a decision: it says "a match
+counts if EITHER the absolute values OR a single global-cast-corrected version of them lands within
+tolerance", trading a higher false-accept rate under adversarial casts for the print-robustness the
+milestone demands. **Spec consequence:** the spec should define (a) whether relationship-mode colour
+matching is permitted at all and, if so, its scoring (absolute vs relationship vs their combination);
+(b) the sane bound on a correction transform (diagonal-gain only? full 3×3? bounds?); (c) how few inks
+may support a relationship claim — because a colour signature that may be rescaled per channel is
+strictly weaker than one that may not, and two conforming recognisers must agree on how much weaker;
+and (d) how clipped (saturated) channel observations are treated — a cast that clips a bright ink
+destroys information *asymmetrically* (a lower bound survives), and a conforming recogniser must
+neither count that loss as identity mismatch nor let it bias the cast estimate.
+
+## SI-021 · §5 · decided-here — Colour-only overprint verification cannot associate a wildly-corrupted overlap, and a single-hue ramp mimics a broken product
+
+Audit 002 §5 makes the multiply overprint a **self-verifying** check: "a fragment where inks cross
+contains parents and product together, and c₁ × c₂ ≠ c₃ flags an unfaithful reproduction." The audit
+performs this having already *identified* the overlap region and its two parents (visually); a
+pixels-only recogniser must instead recover the association from colour alone, and two facts make that
+lossy. (1) A genuine multiply product is **darker** than both parents; a *wildly* corrupted overlap
+(e.g. an additive `a+b` blend, which is *lighter* than either parent) is too far from any multiply pair
+to be associated with its parents at all — it reads as a spurious extra ink, caught (if anywhere) by
+the ink-set match, not the overprint check. So the overprint-consistency residual can only catch
+overprints whose arithmetic **drifted** (stayed in the product's neighbourhood, darker than both
+parents), which is the realistic "unfaithful reproduction" the audit describes; a gross blend is a
+different failure mode. (2) A single-hue **lightness ramp** — e.g. a 001 band surface's anti-aliased
+greens — contains colours where a darker green really is ≈ `multiply(two lighter greens)`, so a naïve
+"is this colour a product of two others?" test manufactures phantom broken overprints and raises a
+false verification flag when a grid sheet is scored against a band image. **Choice made
+(`separate_products`):** a colour is a product only if a pair (i) **contains** it (darker per channel,
+since multiply darkens) and (ii) for a *broken* (drifted) product, the parents are **distinct in hue**
+(OpenCV hue distance ≥ `MIN_PARENT_HUE=15`) — an overprint is between two *different* inks, so a
+single-hue ramp is excluded by construction. Faithful products are matched tight
+(`PRODUCT_SEP_TOL=8`, self- or distinct-pair) and broken ones in a wider band
+(`PRODUCT_BROKEN_TOL=40`, distinct-hue); the overprint verification tolerance `OVERPRINT_RESIDUAL_TOL=12`
+(RGB units) sits between them so a clean render passes at residual 0 and a drifted overprint flags. These
+four constants are **v0 choices**. **Spec consequence:** the meta-grammar should state that overprint
+consistency is a **weight-0 verification** signal defined only for in-neighbourhood arithmetic drift
+between two distinct inks (not a detector of arbitrary blend corruption), and should say whether the
+overlap region may be assumed pre-identified (as the audit had it) or must be recovered from pixels —
+because the two impose very different robustness requirements on a conforming recogniser.
