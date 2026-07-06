@@ -257,3 +257,48 @@ Phase-2 rotated fragment sampler degenerates to a zero-size window at ≈ 90° w
 makes the window far wider than its fitting margin, so those fragments are honestly skipped and
 tallied (`skipped_geometry` in the manifest) rather than measured — a sampler bug to fix before
 90° coverage is complete, not a spec gap.
+
+## SI-018 · §3 · decided-here — The audit names a "density"/composition dialect but publishes no composition model, so the grid generator supplies one
+
+Audit 002 (§3, §4 `variation.per_variant: [ink subset, composition, density]`) lists *composition*
+and *density* as things that vary per variant, and §3 states plainly that "the compositions are
+figurative and free — the genome is the construction system, not the picture." It therefore
+publishes **no** placement model: no primitive-frequency proportions, no density scale, no rule
+for how instances are laid on the grid. That is deliberate — the genome is the alphabet + grid +
+rhythm + overprint + ground, and the picture is dialect freedom — but the generator
+(`generator/grid.py`) must still *choose* a concrete composition to emit pixels. **Choice made:**
+seeded free placement of `round(density × cols × rows)` primitive instances, each of a
+uniformly-chosen type from the five-primitive alphabet, at seeded grid positions/sizes/orientations,
+drawn in a seeded 4–6 ink subset of the master set. The `density` parameter (default 0.45) maps to
+audit §3 "density" as *instances per cell*: it scales only how crowded the free composition is, and
+touches nothing in the genome (grid, alphabet, stripe rhythm, overprint, ground are all invariant to
+it). The uniform type distribution is an explicit non-commitment: the sheet's `primitive_frequency_mix`
+feature (weight reserved, `status: unmeasured`, SI-008) is exactly the proportions the audit §6.2 names
+but never publishes, so the generator records the realised counts as ground truth (`GroundTruth.primitive_counts`)
+without claiming any distribution is *the* identity's. **Spec consequence:** the meta-grammar should
+say whether a composition/density model is (a) purely a generator concern outside the enrolled genome
+(this implementation's assumption), or (b) itself an enrollable dialect feature with committed
+proportions — and if (b), it must define the units of "density" and the reference for a
+primitive-frequency-mix distribution so a recogniser can score it. Until then this generator treats
+composition as free (a), and its density/mix parameters as reproducibility knobs, not signature.
+
+## SI-019 · §2 · decided-here — Exact multiply overprint is not associative under rounding, so overprint depth is capped at 2
+
+Audit 002 §2 verifies the overprint rule to the integer: an overlap colour equals the channel-wise
+multiply of its parents, `c = round(c1·c2 / 255)`, confirmed exact on three measured pairs
+(green×yellow → (115,251,33), etc.). The audit only ever measures **two-ink** overlaps — every row in
+its overprint table is a single pair — and never states what a *third* ink crossing a two-ink overlap
+should yield. This matters because the integer-rounded multiply is **not associative**:
+`round(round(a·b)/·c)` can differ from `round(a·round(b·c))` by a unit, and more importantly a
+free composition with deep pile-ups would populate the output with triple-, quadruple- … product
+colours, none of which the audit sanctions or a recogniser's pairwise self-verification
+(audit §5: "a fragment where inks cross contains parents and product together") can check. **Choice made:**
+the generator caps overprint at 2 inks deep — a third ink does not print where two already overlap
+(`generator/grid.py`, `MAX_DEPTH = 2`). White is an exact multiply identity
+(`round(255·c/255) == c`), so the ground never counts toward depth. This keeps the strong whole-image
+invariant *every output colour is white, a lone ink, or a pairwise ink product* exactly true and
+pixel-checkable, at the cost that dense pile-ups clip the third ink rather than deepening. **Spec
+consequence:** the meta-grammar should state, for a multiply-overprint colour model, either (a) that
+overprint is defined only pairwise and deeper stacks are out of grammar (this implementation), or
+(b) a committed n-ink compositing order + rounding so deep overlaps are themselves derivable and
+verifiable — since without one, "overlap == multiply(parents)" is ambiguous the moment three inks meet.
