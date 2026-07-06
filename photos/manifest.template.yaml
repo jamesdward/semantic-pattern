@@ -8,11 +8,14 @@
 # - grammar:    bar-cascade-001 (for the 001-* sheets) or iso-002 (for the 002-*).
 # - conditions: how you shot it; logged verbatim into raw_results.csv.
 #     lighting:  daylight | warm_indoor | cool_led_or_shade
+#                (screen arm: dark_room | normal_room | lamp_glare)
 #     angle_deg: 0 | 30 | 60         (straight-on / ~30 deg / ~60 deg)
 #     distance:  fills_frame | far_2m
-#     printer:   your printer model (free text)
-#     paper:     plain | matte_photo | ...
-# - notes:      free-form.
+#     medium:    print | screen      (what the camera photographed)
+#     printer:   your printer model (free text; "none" for the screen arm)
+#     paper:     plain | matte_photo | screen | ...
+# - notes:      free-form. Screen arm: record display model, brightness,
+#               and whether Night Shift / True Tone was on.
 #
 # The two entries below are EXAMPLES -- delete them and add your own.
 
@@ -25,6 +28,7 @@ photos:
       lighting: daylight
       angle_deg: 0
       distance: fills_frame
+      medium: print
       printer: "<your printer model>"
       paper: plain
     notes: ""
@@ -32,9 +36,10 @@ photos:
     surface_id: 002-s0
     grammar: iso-002
     conditions:
-      lighting: warm_indoor
+      lighting: dark_room
       angle_deg: 30
       distance: fills_frame
-      printer: "<your printer model>"
-      paper: plain
-    notes: "example second entry"
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "example screen-arm entry: MacBook Pro 14, brightness 90%, Night Shift off"

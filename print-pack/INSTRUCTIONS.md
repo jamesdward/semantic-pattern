@@ -40,6 +40,27 @@ Phone camera: use the **default** camera app, **auto** everything (auto WB, auto
 exposure, HDR as it comes). Do NOT use a "document scan" mode -- that flattens
 lighting and defeats the point. Hold steady; a blurred shot is a blurred shot.
 
+## 2b. No printer? The screen arm
+
+If you cannot print, photograph the sheets **displayed on a screen** instead. Be
+clear about what this tests and what it does not: a screen is a real surface for
+the system (patterns live on displays), and screen photos exercise the camera
+pipeline, angles, glare and **moire** (screen pixel grid vs camera sensor -- a
+genuinely hostile condition worth having). What they CANNOT answer is the
+print-specific question -- whether the ink set survives printer gamut and paper --
+so the print arm still matters when a printer is available. Label everything
+honestly and the summary keeps the two arms separate.
+
+- Open each PNG full screen; bigger on screen = less moire per pattern module.
+- Fixed display brightness (~75-100%), **auto-brightness OFF**. Note whether
+  Night Shift / True Tone is on -- if it is, that is a real white-balance cast;
+  either turn it off, or keep it on deliberately and record it in `notes`.
+- Same angles and distances as the matrix above. For "lighting", substitute:
+  `dark_room` | `normal_room` | `lamp_glare` (a lamp visibly reflecting off the
+  screen -- the worst case).
+- In the manifest set `medium: screen`, `printer: none`, `paper: screen`, and put
+  the display model + brightness + Night Shift status in `notes`.
+
 ## 3. File naming
 
 Names carry NO meaning -- the manifest does. Let your phone name them
