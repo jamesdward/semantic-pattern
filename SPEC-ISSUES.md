@@ -144,3 +144,65 @@ surface, always has these to hand and passes them. This keeps the sampler usable
 surface while making the band ground truth exact when the generation params are known. The
 spec has no notion of a surface carrying its own generation provenance; if one is added
 (compare SI-007), the module would travel with the surface and this parameter could drop.
+
+## SI-013 · §8 · decided-here — Verdict thresholds (identified / candidate) are undefined
+
+§8 step 4 requires a recogniser to report "high-confidence identification · candidate-with-
+probability · or honest non-recognition" but fixes no numeric boundary between those three
+buckets. **Choice:** recogniser v0 calls an aggregate confidence `identified` at `>= 0.70`,
+`candidate` at `>= 0.40`, else `not_recognised`, and publishes both thresholds in every
+claim's `working` so a reader can re-bucket. The numbers are calibrated against the
+sample-size saturation of `score.py` (SI-002): with those `k` constants the canonical
+5-band surface lands ~0.77 and a single band is capped at 0.40, so 0.70/0.40 place the
+boundaries where the audit-s3 fragment-strength map wants them. They are **not** universal:
+the spec should either fix thresholds (so "two conforming recognisers agree", §8) or, better,
+require the recogniser to publish its own thresholds + scoring constants and compare claims
+by the raw numbers rather than the verdict word. Until then the words are advisory and the
+three published numbers (renormalised score, coverage, aggregate) are the real output.
+
+## SI-014 · §8/§3.7 · open — The phase = duty fingerprint needs the phase *origin*, not just a boundary
+
+Audit 001 s3's fragment-strength map says one band boundary already yields "one phase
+observation", implying the phase step is measurable wherever a boundary is in frame. In
+practice it is **not**: the per-band phase accumulates from the pattern's origin, and the
+offset between two adjacent bands is only pinned relative to that origin. Because the cascade
+ratio (1.94) is irrational-ish, the visible offset between a coarser stripe and the nearest
+finer stripe takes the values `(phase_step + (ratio-1)·j) mod 1` over successive coarse
+stripes `j` — an equidistributed set carrying no single recoverable number. An interior
+fragment that does not contain the phase origin therefore cannot confirm `phase == duty`; a
+fragment that *does* (e.g. a full-height slice reaching the origin row, or the whole surface)
+measures it cleanly at 0.31. **Consequence in v0:** the recogniser measures the phase step
+best-effort with `n = boundaries`, but on origin-free fragments its agreement is honestly
+low, so such fragments top out as *candidates* while origin-capturing captures reach
+*identified*. This is arguably the true shape of audit s3's "unevenly distributed signature":
+the phase component of the genome lives not merely in the transitions but at the origin of the
+cascade. The spec/audit should either (a) refine the fragment-strength map to say the phase
+observation needs the origin, or (b) add a structural anchor (a detectable origin marker, cf.
+the audit's optional "micro-rhythm") that distributes the phase reference into every band.
+
+Sharper corollary, stated plainly: **this cost was created by the tune.** At the canonical
+ratio 2.00 the adjacent periods are commensurate — every second fine stripe realigns with a
+coarse stripe, so the inter-band offset is a single locally measurable number at *any*
+boundary. Tuning 2.00 → 1.94 (audit s4) bought distinctiveness in the ratio dimension by
+spending local measurability in the phase dimension. Tuning is not free: moving a value off
+a canonical peak can change *which fragments can measure which locus features*. The spec's
+tuning guidance (§6.2 step 3) should require re-deriving the fragment-strength map after
+any tune.
+
+## SI-015 · §8 · decided-here — "Aggregate confidence" must carry coverage as well as match quality
+
+§8 step 3 asks for "an aggregate confidence that scales with sample size" but a single scalar
+cannot honestly express two independent facts: *how well what we saw matched* and *how much of
+the signature locus we actually saw*. A fragment that observes only duty + colour and matches
+them perfectly would, on a naive weighted-mean-over-observed-features scheme, report ~1.0 —
+hiding that 60% of the locus (cascade, phase) was never seen. **Choice:** the recogniser
+publishes **three** numbers — `renormalised_score` (weighted confidence over *observed*
+identification features: "of what we saw, how well did it match"), `coverage` (observed
+identification weight / measurable identification weight: "how much did we see"), and their
+product `aggregate_confidence`. The product is the honest cap the audit-s3 map demands: a
+single-band fragment has coverage 0.40, so its aggregate cannot exceed 0.40 however perfect
+the match. Weight of features the *sheet* marks `status: unmeasured` (SI-008) is excluded from
+the coverage denominator (reserved, not owed); weight of features the sheet expects but this
+recogniser could not observe (n = 0) stays in the denominator, so it honestly drags coverage
+down. The spec should adopt the three-number output (or an equivalent that keeps match-quality
+and coverage separable) rather than a single conflated confidence.
