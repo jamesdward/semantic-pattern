@@ -276,33 +276,34 @@ def test_iso002_does_not_crash_and_scores_below_001(surface0):
 
 
 def test_iso002_grid_family_measures_gracefully_on_band_image(surface0):
-    """Phase 6 changed this: the grid measurer family now EXISTS, so a 001 band
-    image is also measured by it (claim.STRUCTURE_MEASURERS) and iso-002 is scored
-    against real grid measurements -- honestly, and still well below 001.
-
-    The pre-Phase-6 version of this test asserted 'no measurer for grid_module';
-    that documented the absence this phase fills. The invariant that MUST hold is
-    honest cross-discrimination: iso-002's nine-ink address is not met by a band
-    surface's two greens, and primitive_frequency_mix stays reserved (SI-008)."""
+    """Phase 6 gave the grid family a measurer, so a 001 band image is measured by
+    it and iso-002 is scored against real grid measurements -- honestly, and still
+    well below 001. Phase 9 (SI-026) committed primitive_frequency_mix as measured,
+    so it now runs here too; the invariant that MUST hold is unchanged honest
+    cross-discrimination: neither the nine-ink address nor the ISO primitive mix is
+    met by a band surface, so both id-features agree ~0 and iso-002 does not
+    identify."""
     r002 = _result(recognise(surface0, str(GRAMMARS)), "iso-002")
 
     # The grid family ran end to end: the grid module (weight-0 normalisation) and
     # the ink-set extractor both produced real measurements -- never a crash.
     assert _feature(r002, "grid_module")["observed"] is True
     assert _feature(r002, "ink_set")["observed"] is True
-    # ...but two greens are not the nine ISO inks: colour agreement stays low and
-    # the relationship path is disabled (< 3 inks, SI-020), so no leniency leaks.
+    # ...but a band surface's greens are not the nine ISO inks: colour agreement
+    # stays low and the relationship path is disabled (< 3 inks, SI-020).
     assert _feature(r002, "ink_set")["agreement"] < 0.34
 
-    # primitive_frequency_mix is reserved + skipped regardless (SI-008).
+    # primitive_frequency_mix is now measured (SI-026), but a band composition is
+    # nothing like the ISO primitive mix, so its agreement is ~0 -- it cannot
+    # rescue the cross-family score.
     prim = _feature(r002, "primitive_frequency_mix")
-    assert prim["observed"] is False
-    assert "SI-008" in prim.get("note", "")
+    if prim["observed"]:
+        assert prim["agreement"] == 0.0
 
-    # No two-ink overprints on a two-green band surface: overprint unobserved,
-    # which is NOT a verification failure.
+    # No two-ink overprints on a band surface: overprint unobserved (NOT a
+    # verification failure), and iso-002 does not identify a band image.
     assert _feature(r002, "overprint_consistency")["observed"] is False
-    assert "iso-002" not in [r002["sheet_id"]] or r002["verdict"] != "identified"
+    assert r002["verdict"] != "identified"
 
 
 # =========================================================================

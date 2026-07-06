@@ -453,6 +453,7 @@ def render_with_truth(
     seed: int,
     ink_subset=None,
     density: float = 0.45,
+    types=None,
 ):
     """Render a grid composition and its GroundTruth; return (surface, truth).
 
@@ -465,6 +466,12 @@ def render_with_truth(
                   subset of the master set (audit s3).
       density     composition density (audit s3 dialect freedom, SI-018): the
                   number of placed primitive instances is round(density*cols*rows).
+      types       optional restriction of the primitive pool to a subset of
+                  ``PRIMITIVE_TYPES`` (composition freedom, SI-018). Default (None)
+                  draws uniformly from all five, the audit-neutral dialect. A
+                  single-type restriction builds a same-ink/different-composition
+                  impostor for the SI-022/SI-026 distinctiveness test; the genome
+                  (grid, alphabet, rhythm, overprint, ground) is untouched.
 
     Surface is (H, W, 3) BGR uint8 on a white ground, built by multiplying flat
     ink layers (exact overprint, depth capped at 2 -- module docstring).
@@ -498,10 +505,17 @@ def render_with_truth(
     label_first = np.full((h, w), -1, dtype=np.int64)
     label_second = np.full((h, w), -1, dtype=np.int64)
 
+    if types is None:
+        type_pool = PRIMITIVE_TYPES
+    else:
+        type_pool = tuple(t for t in PRIMITIVE_TYPES if t in set(types))
+        if not type_pool:
+            raise ValueError("types must name at least one of PRIMITIVE_TYPES")
+
     n_primitives = max(1, round(density * cols * rows))
     primitives = []
     for _ in range(n_primitives):
-        type_ = PRIMITIVE_TYPES[int(rng.integers(len(PRIMITIVE_TYPES)))]
+        type_ = type_pool[int(rng.integers(len(type_pool)))]
         ink_k = int(rng.integers(len(ink_hexes)))
         mask, cells, params = _place_primitive(rng, rows, cols, module_px, type_)
 

@@ -53,13 +53,44 @@ What we measure, and why (Pattern Grammar Audit 002 s2 / s5 / s6):
     report the duty; if no striped region is found we report it unobserved
     (n = 0), never a failure.
 
-  * PRIMITIVE FREQUENCY MIX (audit s6 point 2; sheet ``status: unmeasured``,
-    SI-008). A rough connected-component classifier bins components into
-    {circle_like, rectangle_like, stripe_like, diagonal_like, other}. The sheet
-    declares this feature unmeasured, so the scorer SKIPS it regardless (SI-008);
-    we expose the measured mix in the working as "measured but uncommitted",
-    with an honest caveat that overlapping primitives merge into one component so
-    the classifier is coarse. We deliberately do not over-engineer it.
+  * PRIMITIVE FREQUENCY MIX (audit s6 point 2; committed as an identification
+    carrier at grammar_version 1.1.0, SI-008/SI-026). We classify inked regions
+    into the five alphabet primitives (filled_cell, inscribed_circle, stripe_bar,
+    staircase_diagonal, rounded_cap) by shape statistics in MODULE units and
+    report the share of primitive INSTANCES by type (matching
+    ``GroundTruth.primitive_counts`` semantics) plus n = instances observed.
+
+    Separation is the hard part: overlapping primitives merge into one connected
+    component. Three moves keep the estimate honest (SI-026):
+      1. PER-INK LAYERING. Instead of one all-ink mask (where every adjacent or
+         overlapping primitive fuses into a few giant blobs -- only ~3% of
+         instances stay separable), we reconstruct each ink's footprint from the
+         overprint arithmetic: a pixel "carries ink X" when it is exactly X (a
+         depth-1 region) OR exactly multiply(X, Y) for some other extracted ink Y
+         (a depth-2 overlap). Components then merge only with SAME-ink neighbours
+         (rare: each instance draws a random ink from a 4-6 subset).
+      2. INTERIOR-ONLY COUNTING. A component touching the image border may be a
+         primitive clipped by the fragment boundary; its shape statistics are
+         corrupted, so it is excluded (count reported) and n counts INTERIOR
+         classified instances only. The scorer's n-dependent tolerance (score.py,
+         SI-026) absorbs the sampling noise of the smaller n.
+      3. HONEST UNCLASSIFIED SHARE. A component that does not match a single
+         primitive's module footprint (a merged multi-primitive blob, or a shape
+         off the alphabet) is counted UNCLASSIFIED, never forced into a bin. The
+         mix is the share over CLASSIFIED instances; the unclassified share is
+         reported so the caller sees how much was absorbed. Tolerance on the sheet
+         (SI-026) covers the residual bias this leaves.
+
+    The classifier never cross-confuses (measured recall 1.0 AND precision 1.0
+    per type on isolated primitives -- single-bar stripe blocks are caught by the
+    half-cell-bar rule, 4-cell stadiums by the widened extent band, and the
+    disc-IoU gate keeps clipped-cell remnants out of the circle bin): on real
+    compositions a merged or cap-clipped (SI-019) component becomes unclassified
+    or a filled-cell remnant, never a wrong multi-cell label. The residual bias
+    (filled_cell over-represented by survival and remnants) is consistent and
+    baked into the committed expected vector, which genuine surfaces match and a
+    same-ink impostor with a different composition does not (its measured L1
+    floor sits at ~1.0, above the committed tolerance).
 
   * INK-SET matching is NOT done here. The two-path (absolute + relationship /
     white-balance-gain) match lives in ``recogniser/score.py`` because it needs
@@ -141,6 +172,63 @@ MIN_PARENT_HUE = 15
 # Stripe detection: a column is "striped" when its interior ink/gap runs are
 # within this fraction of the module of the expected M/2 bar/gap.
 STRIPE_RUN_TOL_FRAC = 0.30
+
+# --- primitive-mix classifier constants (SI-026) ----------------------------
+
+# The five alphabet primitives, in the generator's PRIMITIVE_TYPES order. The
+# committed mix vector (sheet ``expected``) and the measured value are lists in
+# THIS order, so the scorer's L1 is index-aligned.
+PRIMITIVE_MIX_ORDER = (
+    "filled_cell",
+    "inscribed_circle",
+    "stripe_bar",
+    "staircase_diagonal",
+    "rounded_cap",
+)
+
+# A component whose area is below this fraction of a module cell is noise (a stray
+# overprint sliver, a degraded edge) and is skipped before classification.
+MIX_MIN_AREA_FRAC = 0.10
+
+# A single primitive spans at most a few modules (staircase n<=5, stripe 3x3).
+# A component wider/taller than this in modules is a merged multi-primitive blob
+# and is counted unclassified, never binned.
+MIX_MAX_FOOTPRINT_MODULES = 5
+
+# A non-stripe component's bounding box must sit within this many modules of an
+# integer cell footprint to be a clean single primitive (else unclassified).
+MIX_FOOTPRINT_TOL_MODULES = 0.33
+
+# Extent (filled area / bbox area) bands per primitive, in module-normalised
+# shape space (all measured, not tuned to fit): a solid cell fills ~1.0, an
+# inscribed circle ~pi/4, a stripe block ~0.5, a staircase ~1/n, a stadium
+# ~0.85-0.93. Bands are set wide enough to absorb rasterisation yet never overlap
+# between types (confusion matrix: precision 1.0, no cross-type errors).
+MIX_STRIPE_EXTENT = (0.30, 0.72)
+MIX_STAIRCASE_EXTENT_MAX = 0.62
+MIX_CIRCLE_EXTENT = (0.64, 0.88)
+# Stadium upper bound 0.955: an n-cell stadium fills (n-1+pi/4)/n of its bbox =
+# 0.893 (n=2), 0.928 (n=3), 0.946 (n=4) -- the earlier 0.94 bound silently missed
+# every 4-cell stadium (SI-026 recall fix).
+MIX_STADIUM_EXTENT = (0.70, 0.955)
+MIX_FILLED_EXTENT_MIN = 0.85
+MIX_QUARTER_EXTENT_MAX = 0.985
+
+# Single-bar stripe blocks: a 1-cell-tall stripe block renders as ONE solid bar,
+# height M/2 -- no periodicity to vote on, but the alphabet contains no other
+# half-cell-tall solid form, so a solid bar whose bbox height is ~M/2 and width a
+# whole number of modules IS a stripe bar (SI-026 recall fix; previously ~1/3 of
+# stripe placements were systematically missed).
+MIX_HALF_BAR_HEIGHT = (0.35, 0.65)   # bbox height in modules
+MIX_HALF_BAR_EXTENT_MIN = 0.90       # solid bar
+
+# An inscribed-circle candidate must also BE a disc: IoU between the component
+# and the ideal disc inscribed in its bounding box. Exact (1.0) on clean renders;
+# the margin absorbs mild degradation. This gate exists because the extent band
+# alone is spoofable -- a cell partially clipped by the depth-2 overprint cap
+# (SI-019) can land in the circle extent band without being disc-shaped, and that
+# leakage flattered a same-ink all-staircase impostor's mix (SI-026 / SI-022).
+MIX_CIRCLE_DISC_IOU = 0.90
 
 
 # --- multiply (matches generator.grid exactly) ------------------------------
@@ -457,54 +545,236 @@ def _run_lengths(mask_1d):
 # --- primitive frequency mix (SI-008: measured but uncommitted) -------------
 
 
-def measure_primitive_mix(surface: np.ndarray, module_px):
-    """Rough connected-component classification of the primitive mix.
+def _classify_primitive(comp: np.ndarray, module_px: int):
+    """Classify one connected component mask into a primitive type, or ``None``.
 
-    Returns ``(mix, n_components, detail)``. Bins each ink component into
-    {circle_like, rectangle_like, stripe_like, diagonal_like, other} by simple
-    shape statistics (extent, aspect, circularity, and internal stripe periodicity).
-    This is deliberately coarse: overlapping primitives merge into one component,
-    so the counts are indicative, not exact -- honesty note carried in the detail.
-    The sheet declares ``primitive_frequency_mix`` unmeasured (SI-008), so the
-    scorer skips this regardless; it is exposed only as working evidence.
+    ``comp`` is a bool bounding-box mask of a single ink component; ``module_px``
+    the measured module M. Returns one of ``PRIMITIVE_MIX_ORDER`` or ``None`` when
+    the component is not a clean single primitive (a merged blob or off-alphabet
+    shape -> unclassified). Decisions use only module-normalised shape statistics
+    (footprint in cells, extent, internal stripe periodicity, a corner test) and
+    are ordered so the distinctive stripe periodicity is tested before the
+    footprint gate a half-integer stripe bbox would fail (SI-026).
     """
-    ink = (surface != 255).any(axis=2).astype(np.uint8)
-    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(ink, connectivity=8)
-    bins = {"circle_like": 0, "rectangle_like": 0, "stripe_like": 0,
-            "diagonal_like": 0, "other": 0}
-    min_area = max(16, (module_px * module_px) // 8) if module_px else 16
-    n_components = 0
-    for lab in range(1, n_labels):
-        area = int(stats[lab, cv2.CC_STAT_AREA])
-        if area < min_area:
+    bh, bw = comp.shape
+    area = int(comp.sum())
+    if area == 0:
+        return None
+    bw_m = bw / module_px
+    bh_m = bh / module_px
+    nw = int(round(bw_m))
+    nh = int(round(bh_m))
+    if nw < 1 or max(nw, nh) > MIX_MAX_FOOTPRINT_MODULES:
+        return None
+    extent = area / float(bw * bh)
+
+    # (1) Stripe FIRST. Regular M/2 ink runs separated by ~M/2 gaps (period ~M) in
+    # several columns -- a distinctive periodicity, tested before the footprint
+    # gate because a multi-bar block's bbox height is the half-integer (h-0.5)M.
+    if MIX_STRIPE_EXTENT[0] <= extent <= MIX_STRIPE_EXTENT[1] and _is_striped(comp, module_px):
+        return "stripe_bar"
+
+    # (1b) Single-bar stripe block: a 1-cell-tall block is ONE solid bar (height
+    # M/2, width a whole number of modules) with no periodicity to vote on. No
+    # other alphabet form is half-a-cell tall, so the shape alone identifies it.
+    if MIX_HALF_BAR_HEIGHT[0] <= bh_m <= MIX_HALF_BAR_HEIGHT[1] \
+       and abs(bw_m - nw) <= MIX_FOOTPRINT_TOL_MODULES \
+       and extent >= MIX_HALF_BAR_EXTENT_MIN:
+        return "stripe_bar"
+
+    # Remaining types are single cells on the grid: bbox must be near-integer.
+    if nh < 1 or abs(bw_m - nw) > MIX_FOOTPRINT_TOL_MODULES \
+       or abs(bh_m - nh) > MIX_FOOTPRINT_TOL_MODULES:
+        return None
+
+    # (2) Staircase: square-ish multi-cell footprint left sparsely filled (~1/n).
+    if nw >= 2 and nh >= 2 and abs(nw - nh) <= 1 and extent <= MIX_STAIRCASE_EXTENT_MAX:
+        return "staircase_diagonal"
+
+    # (3) Inscribed circle: square 1x1 or 2x2 footprint, extent ~pi/4, AND the
+    # component actually IS the inscribed disc (IoU gate, MIX_CIRCLE_DISC_IOU):
+    # the extent band alone is spoofable by depth-2-clipped cell remnants.
+    if nw == nh and nw in (1, 2) and MIX_CIRCLE_EXTENT[0] <= extent <= MIX_CIRCLE_EXTENT[1]:
+        if _disc_iou(comp) >= MIX_CIRCLE_DISC_IOU:
+            return "inscribed_circle"
+        return None  # circle-sized but not disc-shaped: unclassified, never binned
+
+    # (4) Rounded cap -- stadium: elongated 1xn / nx1 footprint, high extent with
+    # rounded (area-shaving) ends.
+    if ((nw >= 2 and nh == 1) or (nh >= 2 and nw == 1)) \
+       and MIX_STADIUM_EXTENT[0] <= extent <= MIX_STADIUM_EXTENT[1]:
+        return "rounded_cap"
+
+    # (5) 1x1 near-solid: filled_cell, unless exactly one corner is shaved -> the
+    # rounded_cap quarter-round.
+    if nw == 1 and nh == 1 and extent >= MIX_FILLED_EXTENT_MIN:
+        q = max(2, module_px // 4)
+        corners = [comp[:q, :q], comp[:q, -q:], comp[-q:, :q], comp[-q:, -q:]]
+        empty = sum(1 for c in corners if float(c.mean()) < 0.55)
+        if empty == 1 and extent < MIX_QUARTER_EXTENT_MAX:
+            return "rounded_cap"
+        return "filled_cell"
+    return None
+
+
+def _is_striped(comp: np.ndarray, module_px: int) -> bool:
+    """True when a component's columns carry the M/2 bar / M/2 gap stripe rhythm.
+
+    Samples several columns; a column votes when its ink runs are all ~M/2 and its
+    interior gaps ~M/2 (audit s2 rhythm). Requires a majority of sampled columns
+    to agree, so a lone bar (a 1-cell-tall block) or an incidental gap never reads
+    as a stripe block.
+    """
+    bh, bw = comp.shape
+    tol = 0.35 * module_px
+    half = module_px / 2.0
+    votes = 0
+    checked = 0
+    for frac in (0.2, 0.35, 0.5, 0.65, 0.8):
+        cx = int(bw * frac)
+        if cx >= bw:
             continue
-        n_components += 1
-        bw = int(stats[lab, cv2.CC_STAT_WIDTH])
-        bh = int(stats[lab, cv2.CC_STAT_HEIGHT])
-        extent = area / float(bw * bh) if bw * bh else 0.0
-        aspect = bw / float(bh) if bh else 0.0
-        comp = (labels[stats[lab, cv2.CC_STAT_TOP]:stats[lab, cv2.CC_STAT_TOP] + bh,
-                       stats[lab, cv2.CC_STAT_LEFT]:stats[lab, cv2.CC_STAT_LEFT] + bw]
-                == lab)
-        # Internal stripe periodicity: a stripe block's centre column alternates.
-        mid = comp[:, bw // 2] if bw else np.array([], dtype=bool)
-        runs = [n for on, n in _run_lengths(mid) if on]
-        striped = (module_px and len(runs) >= 2
-                   and all(abs(n - module_px / 2.0) <= 0.4 * module_px for n in runs))
-        if striped:
-            bins["stripe_like"] += 1
-        elif extent >= 0.95 and 0.8 <= aspect <= 1.25:
-            bins["rectangle_like"] += 1
-        elif 0.70 <= extent <= 0.85 and 0.8 <= aspect <= 1.25:
-            bins["circle_like"] += 1          # inscribed circle fills ~pi/4 of its box
-        elif extent <= 0.6:
-            bins["diagonal_like"] += 1        # staircase leaves the box sparsely filled
-        else:
-            bins["other"] += 1
-    detail = {"caveat": "overlapping primitives merge into one component; counts "
-                        "are coarse and this feature is uncommitted (SI-008)",
-              "min_component_area": min_area}
-    return bins, n_components, detail
+        checked += 1
+        runs = _run_lengths(comp[:, cx])
+        interior = runs[1:-1] if len(runs) >= 3 else []
+        on = [n for o, n in runs if o]
+        gap = [n for o, n in interior if not o]
+        if len(on) >= 2 and all(abs(n - half) <= tol for n in on) \
+           and (not gap or all(abs(n - half) <= tol for n in gap)):
+            votes += 1
+    return checked >= 2 and votes >= max(2, checked - 1)
+
+
+def _disc_iou(comp: np.ndarray) -> float:
+    """IoU between a component and the ideal disc inscribed in its bounding box.
+
+    The generator's circle mask is a pixel-centre distance test against the
+    inscribed disc, so a true inscribed circle scores ~1.0; a clipped cell
+    remnant that merely lands in the circle EXTENT band scores far lower.
+    Deterministic, pure numpy.
+    """
+    bh, bw = comp.shape
+    if bh == 0 or bw == 0:
+        return 0.0
+    ys = np.arange(bh, dtype=np.float64) + 0.5
+    xs = np.arange(bw, dtype=np.float64) + 0.5
+    X, Y = np.meshgrid(xs, ys)
+    r = min(bw, bh) / 2.0
+    disc = (X - bw / 2.0) ** 2 + (Y - bh / 2.0) ** 2 <= r ** 2
+    inter = float(np.logical_and(comp, disc).sum())
+    union = float(np.logical_or(comp, disc).sum())
+    return inter / union if union else 0.0
+
+
+def _ink_present_mask(surface_i64: np.ndarray, ink_bgr, other_inks) -> np.ndarray:
+    """Reconstruct the footprint of one ink from the overprint arithmetic (SI-026).
+
+    A pixel carries ink ``ink_bgr`` when it is exactly that colour (a depth-1
+    region) or exactly ``multiply(ink_bgr, other)`` for some other extracted ink
+    (a depth-2 overlap). Reconstructing the overlap regions keeps a primitive's
+    footprint whole, so components merge only with SAME-ink neighbours.
+    """
+    x = np.asarray(ink_bgr, dtype=np.int64)
+    present = np.all(surface_i64 == x, axis=2)
+    for y in other_inks:
+        if np.array_equal(x, y):
+            continue
+        present |= np.all(surface_i64 == _multiply(x, y), axis=2)
+    return present.astype(np.uint8)
+
+
+def measure_primitive_mix(surface: np.ndarray, module_px, ink_set):
+    """Classify the primitive-frequency mix (audit s6 point 2; SI-026).
+
+    ``ink_set`` is the extracted ink set ``[(bgr, fraction), ...]`` from
+    ``separate_products``. Returns ``(mix, n_classified, detail)`` where ``mix`` is
+    a list of five instance shares in ``PRIMITIVE_MIX_ORDER`` (summing to 1 over
+    classified instances, or all-zero when none classified) and ``n_classified``
+    the number of instances observed (the ``primitives_observed`` sample unit).
+
+    Method (SI-026): per-ink footprint reconstruction (``_ink_present_mask``), a
+    vertical morphological close to regroup a stripe block's separated bars into
+    one component, connected components, then ``_classify_primitive`` on the
+    ORIGINAL (un-closed) per-ink mask so the stripe rhythm survives. Components
+    that are not a clean single primitive are counted unclassified. The detail
+    carries the raw counts, the unclassified count/share and the ink layers used.
+    """
+    counts = {t: 0 for t in PRIMITIVE_MIX_ORDER}
+    if not module_px or module_px < 4 or not ink_set:
+        return [0.0] * len(PRIMITIVE_MIX_ORDER), 0, {
+            "reason": "no module/ink set to anchor the primitive mix",
+            "counts": counts, "n_unclassified": 0}
+
+    surface_i64 = surface.astype(np.int64)
+    ink_bgrs = [np.asarray(bgr, dtype=np.int64) for bgr, _ in ink_set]
+    min_area = max(16, int(MIX_MIN_AREA_FRAC * module_px * module_px))
+    # Close vertically enough to bridge the M/2 stripe gap but not a full-cell gap.
+    kh = int(round(0.6 * module_px)) | 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, kh))
+
+    H, W = surface.shape[:2]
+    n_classified = 0
+    n_unclassified = 0
+    n_excluded_edge = 0
+    for x in ink_bgrs:
+        present = _ink_present_mask(surface_i64, x, ink_bgrs)
+        grouped = cv2.morphologyEx(present, cv2.MORPH_CLOSE, kernel)
+        n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(grouped, connectivity=8)
+        present_bool = present.astype(bool)
+        for lab in range(1, n_labels):
+            if int(stats[lab, cv2.CC_STAT_AREA]) < min_area:
+                continue
+            top = int(stats[lab, cv2.CC_STAT_TOP])
+            left = int(stats[lab, cv2.CC_STAT_LEFT])
+            bh = int(stats[lab, cv2.CC_STAT_HEIGHT])
+            bw = int(stats[lab, cv2.CC_STAT_WIDTH])
+            # EDGE EXCLUSION (SI-026): a component touching the image border may be
+            # a primitive clipped by the fragment boundary -- its shape statistics
+            # are corrupted, so counting it biases the mix (standard practice in
+            # counting problems: count interior events only). n therefore counts
+            # INTERIOR classified instances; the exclusion count is reported. The
+            # cost -- whole edge-cell primitives on a full surface are excluded
+            # too, shrinking n -- is priced in consistently: the committed expected
+            # vector is derived from interior-only measurements, and the scorer's
+            # n-dependent tolerance (score.py) absorbs the sampling noise of a
+            # smaller n instead of punishing it as disagreement.
+            if top == 0 or left == 0 or top + bh >= H or left + bw >= W:
+                n_excluded_edge += 1
+                continue
+            # Classify on the ORIGINAL mask (restricted to this grouped component)
+            # so the stripe rhythm the close would fill in is preserved.
+            comp = (present_bool[top:top + bh, left:left + bw]
+                    & (labels[top:top + bh, left:left + bw] == lab))
+            if int(comp.sum()) < min_area:
+                continue
+            t = _classify_primitive(comp, module_px)
+            if t is None:
+                n_unclassified += 1
+            else:
+                counts[t] += 1
+                n_classified += 1
+
+    if n_classified > 0:
+        mix = [counts[t] / float(n_classified) for t in PRIMITIVE_MIX_ORDER]
+    else:
+        mix = [0.0] * len(PRIMITIVE_MIX_ORDER)
+    total_components = n_classified + n_unclassified
+    detail = {
+        "order": list(PRIMITIVE_MIX_ORDER),
+        "counts": counts,
+        "n_classified": n_classified,
+        "n_unclassified": n_unclassified,
+        "n_excluded_edge": n_excluded_edge,
+        "unclassified_share": (round(n_unclassified / total_components, 4)
+                               if total_components else 0.0),
+        "n_ink_layers": len(ink_bgrs),
+        "note": "share of INTERIOR classified primitive INSTANCES by type; "
+                "border-touching components excluded (clipped shapes bias the "
+                "mix), merged/off-alphabet components counted unclassified "
+                "(SI-026). This describes the reconstruction's composition "
+                "model, not Studio.Build's original (SI-018).",
+    }
+    return mix, n_classified, detail
 
 
 # --- top-level grid-surface measurement -------------------------------------
@@ -581,11 +851,17 @@ def measure_grid_surface(image: np.ndarray) -> dict:
     working["stripe"] = stripe_detail
     stripe = Measurement("stripe_duty", duty, n_stripe, stripe_detail)
 
-    # 5. Primitive mix (measured but uncommitted -- SI-008).
-    mix, n_comp, mix_detail = measure_primitive_mix(image, module_px)
-    working["primitive_mix"] = {"mix": mix, "n_components": n_comp, **mix_detail}
-    primitive_mix = Measurement("primitive_frequency_mix", mix, n_comp,
-                                {"note": "measured but uncommitted (SI-008)", **mix_detail})
+    # 5. Primitive mix (committed identification carrier -- SI-026, closing the
+    #    same-ink half of SI-022). Classified from the extracted ink set via
+    #    per-ink footprint reconstruction; None value when nothing classifiable.
+    mix, n_comp, mix_detail = measure_primitive_mix(image, module_px, ink_set)
+    working["primitive_mix"] = {"mix": mix, "n_classified": n_comp, **mix_detail}
+    primitive_mix = Measurement(
+        "primitive_frequency_mix",
+        mix if n_comp > 0 else None,
+        n_comp,
+        mix_detail,
+    )
 
     # 6. Staircase angle: not separately measured in the v0 grid family (weight-0
     #    verification; robustly recovering 45deg from a cell staircase inside a

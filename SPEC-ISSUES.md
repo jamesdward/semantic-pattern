@@ -87,6 +87,18 @@ to Milestone 2, when primitive-frequency extraction exists; committing the value
 identification dimension it has named but not yet quantified — reserving weight under an
 explicit `unmeasured` status is the mechanism proposed here.
 
+**Resolved for the reconstruction (Phase 9, SI-026).** `primitive_frequency_mix` is now
+measured and committed: `iso-002.yaml` at `grammar_version 1.1.0` gives it
+`status: measured`, an `expected` instance-share vector and a scalar `tolerance`, and the
+locus weights rebalance (ink 0.75 → 0.60, mix reserved-0.25 → committed-0.40). The
+`grammar_version` bump (not a schema change) is exactly the mechanism this entry predicted.
+Two caveats stand. (a) The committed vector describes the **reconstruction's** composition
+model (the generator's uniform-type dialect, measured back out), **not** Studio.Build's
+original proportions — measuring those would need the real assets (SI-018); the sheet says so.
+(b) The reservation-then-commit round trip worked as designed, but the spec still owes the
+general rule (how any audit records a named-but-unquantified identification dimension, and
+what committing it later requires); this is one worked instance, not that rule.
+
 ## SI-009 · §3.7 · decided-here — Canonical-peak rule only bites on numeric expected values
 
 Spec §3.7 lists canonical peaks as numbers (0°/45°/90°, ratios 2.0/1.5/φ, duty 1/2·1/3).
@@ -432,6 +444,31 @@ measured in a shared feature space. **Two consequences the spec should price in:
    distance is single-dimensional and therefore that same-family collision is unguarded — because a
    one-feature signature has no minimum distance to defend once that feature is shared.
 
+**Dangerous half substantially closed (Phase 9, SI-026).** Consequence 2's warning — "two grid
+dialects that share an ink set are indistinguishable" — is now measured against, not just noted.
+`primitive_frequency_mix` is committed as a second identification feature (SI-008 resolved), so a
+same-ink impostor must also match the composition. Rebuilt as constrained generator compositions in
+002's **exact** master inks (`generator.grid.render_with_truth(..., types=[...])`), **no same-ink
+single-primitive impostor reaches identified at any fragment fraction** (0.2/0.35/0.5/1.0; 0 of 624
+impostor fragments): **all-circles** peaks at aggregate 0.632 (frac 0.2) and sits at 0.554 from frac
+0.5 up; **all-stripes** at 0.554 everywhere; the **nearest** family — all-staircase / all-filled,
+whose depth-2-cap remnants (SI-019) read as filled cells — peaks at **0.684** (frac 0.35–0.5), still
+below the 0.70 line. That family is the honest bound of an L1-on-mix feature and its margin (0.016)
+is the thinnest; it stays below identified only because the classifier's recall fixes (half-cell-bar
+stripe rule, stadium extent band, disc-IoU circle gate — SI-026) spread the committed expected vector
+across all five bins, pushing the filled+staircase two-bin L1 floor to ~1.0, above the committed
+tolerance 0.95. Genuine held-out surfaces (seeds outside the derivation corpus) identify at **0.92**
+full-surface (0.89 on the report corpus), 0.76 at frac 0.5, 0.63 at frac 0.35. The general cost is
+inherent, not incidental — a fragment too small to measure the mix makes a genuine surface and a
+same-ink impostor **identical** (same inks, second carrier unobservable) — but it is priced honestly,
+not punished: border-clipped components are excluded from the count and the scorer's n-dependent
+tolerance (SI-026) treats small-n L1 as sampling noise, so genuine frac-0.2 fragments hold a mean
+aggregate of 0.64 (solid candidate; identified rate 0.20 vs ~0.91 for the ink-only v1.0 sheet — that
+delta is exactly the price of the closed gap). **Spec consequence (unchanged, sharpened):** §5's
+grid-vs-grid minimum distance is now two-dimensional but still bounded by primitive
+measurement-confusability; the spec should say whether a family may lean on a mix feature whose
+discrimination is uneven across the alphabet, and consequence 1 (the control corpus) remains open.
+
 ## SI-023 · §11/§10 · decided-here — The field battery runs the pipeline UNMODIFIED on raw photos, and puts its human-readable label in the page margin
 
 Spec §11 makes L3 depend on recognition "under the hostile-conditions test battery (print, camera,
@@ -473,3 +510,76 @@ relationship/ordering colour signature (Milestone 2, §5) can only be validated 
 from captures rich enough to estimate the correction, so the field-battery protocol must state a minimum
 per-feature framing (here: ≥3 inks in frame for the WB-diagonal check) rather than treating "photograph
 the surface under varied conditions" as sufficient for every question the battery is meant to answer.
+## SI-026 · §3.7/§5 · decided-here — Measuring and committing the primitive-frequency mix as a second identification carrier
+
+Audit 002 §6 point 2 names "the primitive mix and composition statistics" as one of the two carriers
+of ISO's identification load, and SI-008 reserved weight for it under `status: unmeasured` pending a
+measurer. Phase 9 builds that measurer and commits the value, to close the dangerous half of SI-022.
+Several sub-decisions, all v0 choices the spec does not fix:
+
+1. **Per-ink footprint separation.** The obvious measurer — connected components over one all-ink mask
+   — fails: at the audit's densities (0.35–0.55) overlapping and adjacent primitives fuse into a few
+   giant blobs and only ~3 % of instances stay separable, giving a mix estimate too noisy to carry
+   identification. Instead each ink's footprint is reconstructed from the committed overprint
+   arithmetic (a pixel carries ink X where it is X or `multiply(X, Y)` for another extracted ink Y),
+   so components merge only with **same-ink** neighbours (rare in a 4–6 ink subset). A vertical
+   morphological close regroups a stripe block's separated bars before classification (which runs on
+   the un-closed mask so the M/2 rhythm survives).
+
+2. **Interior-only counting (edge exclusion).** A component touching the image border may be a
+   primitive clipped by the fragment boundary; its shape statistics are corrupted, so it is excluded
+   and `n` counts **interior** classified instances only (the exclusion count is reported in the
+   measurement detail). The cost — whole edge-cell primitives on a full surface are excluded too,
+   shrinking n (typical full-surface interior n ≈ 16 on the derivation grids) — is priced consistently:
+   the committed expected vector is derived interior-only, and the scorer widens the tolerance at
+   small n (point 4) instead of punishing sampling noise as disagreement.
+
+3. **Honest unclassified share, zero cross-confusion, full recall.** A component that does not match a
+   single primitive's module footprint (a merged multi-primitive blob, or an off-alphabet shape) is
+   counted **unclassified**, never forced into a bin; the mix is the share over classified instances
+   and the unclassified share is reported. On isolated primitives the confusion matrix is **diagonal**:
+   recall 1.0 AND precision 1.0 for all five types — three targeted rules close what were systematic
+   recall gaps: (a) a **half-cell-bar rule** catches 1-cell-tall stripe blocks (one solid M/2-tall bar,
+   no periodicity to vote on — no other alphabet form is half-a-cell tall); (b) the stadium extent band
+   extends to 0.955 (a 4-cell stadium fills 0.946 of its bbox and was silently missed at 0.94); (c) a
+   **disc-IoU gate** (≥ 0.90 against the bbox-inscribed disc) keeps depth-2-cap-clipped cell remnants
+   (SI-019) out of the circle bin — the extent band alone was spoofable, and that leakage had flattered
+   the all-staircase impostor's L1. End-to-end (real compositions, merging + edge exclusion included)
+   the mean absolute per-type share error is ~0.11, with the residual bias (filled_cell
+   over-represented by survival and cap remnants) consistent and **baked into the committed expected
+   vector**, which genuine surfaces match.
+
+4. **Expected, tolerance and n-scaling from data.** The `expected` vector `[0.30, 0.10, 0.24, 0.20,
+   0.16]` (order: filled_cell, inscribed_circle, stripe_bar, staircase_diagonal, rounded_cap) is the
+   **mean** interior-only measured mix over a genuine corpus (seeds × densities 0.35/0.45/0.55 ×
+   modules 40/48/64, varying ink subsets; 108 surfaces). Agreement is clipped-linear (SI-001) on
+   `L1(measured, expected) / tolerance_eff` with the **n-dependent effective tolerance**
+
+       tolerance_eff = tolerance × max(1, sqrt(N_REF_PRIMITIVES / n)),   N_REF_PRIMITIVES = 16
+
+   (a share vector from n instances of a 5-bin multinomial has ~sqrt(1/n) L1 sampling deviation, so a
+   small fragment's larger L1 is noise, not disagreement; at n ≥ n_ref the committed value applies
+   unchanged, so full-measurement impostor rejection is never loosened). Confidence is n-scaled
+   (SI-002, `sample_unit: primitives_observed`) with **k = 2**, deliberately harder than the scalar
+   features' k = 1: the widened tolerance raises small-n agreement, so the saturation must discount
+   harder or a lucky small-n impostor fragment could cross the identified line — with k = 2 the
+   worst-case (L1 exactly at the impostor floor, all six inks visible) stays below 0.70 at every n.
+   The committed `tolerance = 0.95` sits in the window bounded **below** by genuine coverage (max
+   n-normalised genuine L1 `L1 × min(1, sqrt(n/n_ref))` over derivation + held-out corpora is 0.83 →
+   ~15 % margin) and **above** by impostor rejection (the nearest impostor family's measured L1 floor
+   is ~1.0 — the filled+staircase two-bin floor `2 × (1 − 0.30 − 0.20)` — so its full-measurement mix
+   agreement is 0). The claim's working carries n, tolerance_eff and the L1.
+
+5. **Weight split from data.** Ink 0.60 / mix 0.40 (from 0.75 / reserved-0.25). The split is set so a
+   same-ink impostor's best case — ink agreement ~1, mix agreement ~0 — scores `0.60 × saturation(inks)`
+   ≈ 0.55, below the 0.70 identified line by ~0.15, while genuine surfaces, whose mix also agrees, clear
+   it. A higher ink weight thins the impostor margin; a lower one costs genuine identification. The
+   `max`-combinator, the 0.70 threshold and the k constants are all prior v0 choices (SI-013, SI-002).
+
+**Spec consequence:** the meta-grammar should say (a) whether a composition/primitive-mix feature is
+enrollable at all (SI-018 asked this from the generator side; here it is answered "yes, as a
+reconstruction-scoped measured feature"); (b) how its expected/tolerance are to be derived and
+published so two recognisers agree; and (c) that its discrimination may be **uneven across the
+alphabet** (strong where compositions differ in primitive *vocabulary*, weak where they reconcentrate
+the same primitives) — so a family leaning on it must publish where its mix signature is load-bearing,
+exactly as §3.7 already asks each grammar to declare *where* its signature lives.
