@@ -26,9 +26,21 @@ import numpy as np
 
 from sheets import list_sheets
 from recogniser import measure as _measure
+from recogniser import measure_grid as _measure_grid
 from recogniser import score as _score
 
 CLAIM_NOTE = "identity claim -- unverified until resolution completes"
+
+# Measurement dispatch registry, keyed by a sheet's ``structure.type`` (spec 8
+# step 2). Each family turns the image into ``{"measurements", "working"}`` in the
+# same shape; ``recognise`` runs each family present ONCE on the image (not once
+# per sheet) and scores each sheet against its own family's measurements. Adding a
+# structure type is one entry here plus a measurer module -- 001 (band) behaviour
+# is untouched because it keeps scoring against ``measure.measure_surface``.
+STRUCTURE_MEASURERS = {
+    "band": _measure.measure_surface,
+    "grid": _measure_grid.measure_grid_surface,
+}
 
 
 def _jsonable(obj):
@@ -58,10 +70,25 @@ def recognise(image_or_path, grammars_dir="grammars", image_ref=None) -> dict:
         image_ref = str(image_or_path) if not isinstance(image_or_path, np.ndarray) \
             else "<array>"
 
-    measured = _measure.measure_surface(image)
     sheets = list_sheets(grammars_dir)
 
-    results = [_score.score_sheet(sheet, measured) for sheet in sheets]
+    # Run each measurer family the present sheets need, ONCE per family on the
+    # image (spec 8 step 2). A sheet whose structure.type has no measurer family
+    # is scored against empty measurements -- graceful, never a crash (the scorer
+    # reports every feature unobserved).
+    empty = {"measurements": {}, "working": {}}
+    measured_by_type = {}
+    for sheet in sheets:
+        stype = sheet.get("structure", {}).get("type")
+        if stype in measured_by_type or stype not in STRUCTURE_MEASURERS:
+            continue
+        measured_by_type[stype] = STRUCTURE_MEASURERS[stype](image)
+
+    results = []
+    for sheet in sheets:
+        stype = sheet.get("structure", {}).get("type")
+        measured = measured_by_type.get(stype, empty)
+        results.append(_score.score_sheet(sheet, measured))
     # Sort by confidence, then sheet id, so the order is deterministic on ties.
     results.sort(key=lambda r: (-r["aggregate_confidence"], str(r["sheet_id"])))
 
@@ -70,7 +97,8 @@ def recognise(image_or_path, grammars_dir="grammars", image_ref=None) -> dict:
         "image_ref": image_ref,
         "image_shape": list(image.shape),
         "results": results,
-        "measurement_working": measured["working"],
+        "measurement_working": {stype: m["working"]
+                                for stype, m in measured_by_type.items()},
         "recogniser_version": "v0",
     }
     return _jsonable(claim)

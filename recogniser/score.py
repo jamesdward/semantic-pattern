@@ -82,6 +82,51 @@ import numpy as np
 IDENTIFIED_THRESHOLD = 0.70
 CANDIDATE_THRESHOLD = 0.40
 
+# White-balance relationship path (grid ink match, SI-020). A single per-channel
+# diagonal correction gain must fall in these bounds to count as a plausible
+# illuminant/white-balance shift; a gain outside them means the colours differ by
+# more than a global cast, so the relationship path is rejected and only the
+# absolute match stands.
+GAIN_MIN = 0.5
+GAIN_MAX = 2.0
+
+# Channel-saturation guards for the relationship path (SI-020). A measured
+# channel at >= CLIP_HIGH was (or may have been) clipped by the cast: its true
+# pre-gain value is unknowable (only a lower bound survives), so it must not
+# feed the gain estimate, and after correction it can only be scored one-sidedly.
+# Symmetrically, a channel at <= CLIP_LOW is too small for a stable sheet/measured
+# ratio (and may have been floored by a gain < 1). A channel's gain needs at
+# least MIN_GAIN_OBS unclipped observations; with fewer it falls back NEUTRALLY
+# to 1.0 with a caveat in the working (documented choice: neutral, not the
+# cross-channel median, because white balance is per-channel by definition and
+# borrowing another channel's cast would fabricate a correction).
+CLIP_HIGH = 250.0
+CLIP_LOW = 5.0
+MIN_GAIN_OBS = 2
+
+# Consensus window for the per-channel gain estimate (SI-020). A genuine global
+# cast makes every true-ink ratio agree to within ~1%; overprint colours that
+# leak into the extracted ink set under the cast produce scattered junk ratios.
+# The estimator takes the LARGEST cluster of ratios that mutually agree within
+# this relative tolerance (deterministic; ties broken by tighter spread, then
+# smaller ratio) -- robust up to half the observations being junk, where a plain
+# median already breaks at ~1/3.
+GAIN_CONSENSUS_REL_TOL = 0.05
+
+# The relationship (white-balance-gain) path needs at least this many measured
+# inks to be credible evidence of a GLOBAL colour cast (SI-020). With fewer, a
+# free per-channel gain plus assignment freedom can overfit a handful of colours
+# onto any palette -- so below this the relationship path is disabled and only the
+# absolute match stands, keeping cross-grammar discrimination honest (a two-ink
+# band fragment cannot borrow the grid ink-set's leniency).
+MIN_INKS_FOR_GAIN = 3
+
+# Overprint-consistency verification tolerance (SI-020): Chebyshev distance (RGB
+# units) between a measured overprint colour and the exact multiply of its
+# parents. Clean renders sit at 0; a residual beyond this reads as broken
+# arithmetic (audit s5 "c1*c2 != c3") and flags the claim's verification.
+OVERPRINT_RESIDUAL_TOL = 12.0
+
 # Sample-size saturation constants per declared sample_unit (SI-002). Small
 # integers: two boundaries already give real cascade evidence, a couple of inks
 # complete the pair, but periods are cheap so they saturate slower.
@@ -130,6 +175,13 @@ def _hex_to_lab(hex_value: str) -> np.ndarray:
     return lab[0, 0].astype(np.float64)
 
 
+def _hex_to_bgr255(hex_value: str) -> np.ndarray:
+    """'#RRGGBB' -> np.array([B, G, R], float 0..255) for gain estimation."""
+    h = hex_value.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return np.array([b, g, r], dtype=np.float64)
+
+
 def _bgr_to_lab(bgr) -> np.ndarray:
     """Mean BGR triple (0..255) -> CIE Lab, same float path as _hex_to_lab."""
     arr = np.array([[[float(bgr[0]), float(bgr[1]), float(bgr[2])]]],
@@ -166,6 +218,307 @@ def _score_ink(feature: dict, measurement) -> dict:
         "expected": expected_hexes,
         "measured": [p["measured_bgr"] for p in per_ink],
         "detail": {"delta_e_tolerance": delta_e_tol, "per_ink": per_ink},
+    }
+
+
+def _greedy_assign_matrix(dist):
+    """Greedy min-distance assignment over a precomputed matrix (Hungarian approx).
+
+    ``dist[mi][ei]`` is the distance between measured ink ``mi`` and expected ink
+    ``ei``. For <= 9 inks a global-greedy assignment (repeatedly take the smallest
+    available pair, each expected used once) is within a hair of optimal and fully
+    deterministic. Returns ``[(mi, ei, distance), ...]`` covering every measured
+    ink (sorted by ``mi``). If there are more measured inks than expected, the
+    surplus fall back to their nearest expected (with reuse) so every measured
+    ink is scored.
+    """
+    cand = []
+    for mi, row in enumerate(dist):
+        for ei, d in enumerate(row):
+            cand.append((d, mi, ei))
+    cand.sort()
+    used_m, used_e = set(), set()
+    pairs = []
+    for d, mi, ei in cand:
+        if mi in used_m or ei in used_e:
+            continue
+        pairs.append((mi, ei, d))
+        used_m.add(mi)
+        used_e.add(ei)
+        if len(used_m) == len(dist):
+            break
+    for mi, row in enumerate(dist):
+        if mi in used_m:
+            continue
+        ei = int(np.argmin(row))
+        pairs.append((mi, ei, row[ei]))
+    pairs.sort(key=lambda p: p[0])
+    return pairs
+
+
+def _greedy_assign(measured_labs, expected_labs):
+    """Greedy assignment measured<->expected on plain delta-E76 in Lab."""
+    dist = [[_delta_e76(ml, el) for el in expected_labs] for ml in measured_labs]
+    return _greedy_assign_matrix(dist)
+
+
+def _rank_corr(measured_vals, expected_vals):
+    """Spearman rank correlation between two equal-length sequences.
+
+    A single positive per-channel gain is monotonic, so it preserves the
+    per-channel ORDERING of the inks -- a rank correlation ~1 corroborates that
+    the ink relationships (orderings) survive the shift even where absolute values
+    do not (audit s6). Ties are averaged; degenerate (constant) input scores 0.
+    """
+    m = np.asarray(measured_vals, dtype=np.float64)
+    e = np.asarray(expected_vals, dtype=np.float64)
+    if m.size < 2:
+        return 0.0
+    rm = _ranks(m)
+    re = _ranks(e)
+    if rm.std() == 0 or re.std() == 0:
+        return 0.0
+    return float(np.corrcoef(rm, re)[0, 1])
+
+
+def _ranks(values: np.ndarray) -> np.ndarray:
+    """Average ranks of ``values`` (ties share the mean rank). Deterministic."""
+    order = np.argsort(values, kind="stable")
+    ranks = np.empty(values.size, dtype=np.float64)
+    ranks[order] = np.arange(values.size, dtype=np.float64)
+    # Average ties so a gain that maps equal values to equal values scores 1.
+    for v in np.unique(values):
+        idx = values == v
+        ranks[idx] = float(np.mean(ranks[idx]))
+    return ranks
+
+
+def _consensus_ratio(ratios):
+    """Largest-consensus estimate of a shared ratio (SI-020 gain estimator).
+
+    Returns the median of the biggest cluster of ``ratios`` that mutually agree
+    within ``GAIN_CONSENSUS_REL_TOL`` (relative), or ``None`` if fewer than
+    ``MIN_GAIN_OBS`` values are given. Deterministic: candidate clusters are
+    anchored at each ratio in sorted order; ties on size break by tighter spread,
+    then by smaller median. Chosen over a plain median because the junk fraction
+    (overprint colours leaking into the ink set under a colour cast, then
+    misassigned) can reach ~1/2, where a median is already dragged off; the true
+    cast forms a tight cluster the junk cannot imitate.
+    """
+    if len(ratios) < MIN_GAIN_OBS:
+        return None
+    ordered = sorted(ratios)
+    best = None  # (count, -spread, median) maximised
+    for anchor in ordered:
+        members = [r for r in ordered
+                   if abs(r - anchor) <= GAIN_CONSENSUS_REL_TOL * anchor]
+        if len(members) < MIN_GAIN_OBS:
+            continue
+        spread = members[-1] - members[0]
+        med = float(np.median(members))
+        key = (len(members), -spread, -med)
+        if best is None or key > best[0]:
+            best = (key, med)
+    return best[1] if best is not None else None
+
+
+def _clip_aware_delta_e(corrected_bgr, clipped_high, expected_bgr, expected_lab):
+    """Delta-E76 of a gain-corrected ink vs a sheet ink, one-sided on clipped channels.
+
+    A channel measured at >= CLIP_HIGH was saturated by the cast, so after
+    correction it is only a LOWER BOUND on the true ink channel (true post-gain
+    value >= 255, hence true ink >= 255 * correction_gain). A clipped channel
+    therefore cannot *match* -- that is measurement loss, not identity mismatch
+    (SI-020) -- so its contribution is capped one-sidedly: if the sheet channel is
+    at or above the bound, the observation is CONSISTENT with the sheet ink and
+    the channel is scored as a match (substituted by the sheet value); if the
+    sheet channel is BELOW the bound, even the most charitable reading exceeds it
+    and the (real) mismatch is kept. Unclipped channels score normally.
+    """
+    if not any(clipped_high):
+        return _delta_e76(_bgr_to_lab(corrected_bgr), expected_lab)
+    adjusted = np.array(corrected_bgr, dtype=np.float64)
+    for ch in range(3):
+        if clipped_high[ch] and expected_bgr[ch] >= adjusted[ch]:
+            adjusted[ch] = expected_bgr[ch]
+    return _delta_e76(_bgr_to_lab(adjusted), expected_lab)
+
+
+def _score_ink_grid(feature: dict, measurement) -> dict:
+    """Two-path ink-set match for GRID sheets: absolute vs relationship (SI-020).
+
+    The milestone requirement: ink-set matching with colour measured as
+    relationships/orderings, not absolutes, so it survives a white-balance shift
+    (audit s6). Two paths, and the feature agreement is their MAX:
+
+      (a) ABSOLUTE. Greedy-assign measured inks to sheet inks in Lab; per-ink
+          agreement is the clipped-linear curve on delta-E76 / delta_e; agreement
+          is the mean over measured inks. This is the print-fragile path -- a
+          global colour cast pushes every delta-E up and it degrades.
+
+      (b) RELATIONSHIP. Estimate a single per-channel diagonal correction gain
+          ``g`` (sRGB BGR, "map measured onto sheet") as the largest CONSENSUS
+          cluster of per-channel sheet/measured ratios over the assignment
+          (``_consensus_ratio``), SATURATION-AWARE: channel observations measured
+          at >= CLIP_HIGH (clipped by the cast; true value unknowable) or
+          <= CLIP_LOW (floored/unstable) are excluded, and a channel with fewer
+          than MIN_GAIN_OBS unclipped observations falls back neutrally to 1.0
+          with a caveat. Apply ``g`` to the full extracted palette, re-separate
+          products in the corrected space, re-assign and re-measure delta-E76 --
+          scoring the clipped channels of clipped inks ONE-SIDEDLY
+          (``_clip_aware_delta_e``: a clipped channel is a lower bound, so
+          consistency with the sheet ink counts as a match; measurement loss is
+          not identity mismatch). If a single global gain within
+          [GAIN_MIN, GAIN_MAX] explains the shift, the ink RELATIONSHIPS
+          (ratios/orderings) hold, so this path stays high where (a) fell. The
+          IMPLIED APPLIED gain (1/g) is reported -- it recovers the white balance
+          that was applied.
+
+    A per-channel rank correlation corroborates the ordering survives (a positive
+    gain is rank-preserving). The working carries both paths, the gain, the
+    implied applied gain, the in-bounds flag, the rank correlation and the
+    clipped-ink handling.
+    """
+    expected_hexes = feature.get("expected") or []
+    tol = feature.get("tolerance") or {}
+    delta_e_tol = float(tol.get("delta_e", 10.0)) if isinstance(tol, dict) else 10.0
+    expected_labs = [_hex_to_lab(h) for h in expected_hexes]
+    expected_bgr = [_hex_to_bgr255(h) for h in expected_hexes]
+
+    observed = measurement.value or []
+    measured_bgr = [np.array([float(c) for c in bgr], dtype=np.float64) for bgr in observed]
+    measured_labs = [_bgr_to_lab(bgr) for bgr in measured_bgr]
+    if not measured_bgr or not expected_labs:
+        return {"agreement": 0.0, "expected": expected_hexes, "measured": [],
+                "detail": {"reason": "no inks to match"}}
+
+    # (a) absolute path.
+    assign_abs = _greedy_assign(measured_labs, expected_labs)
+    abs_deltas = [d for _, _, d in assign_abs]
+    per_ink_abs = [agreement_linear(d, 0.0, delta_e_tol) for d in abs_deltas]
+    agreement_abs = float(np.mean(per_ink_abs))
+
+    # (b) relationship path: a single per-channel diagonal correction gain that
+    # maps measured -> sheet, estimated as the largest CONSENSUS cluster of
+    # per-channel sheet/measured ratios over the absolute assignment
+    # (_consensus_ratio). Consensus (not least squares, not a plain median)
+    # because a global colour cast breaks the multiply overprint arithmetic, so
+    # overprint colours leak into the extracted ink set under white balance and
+    # get misassigned -- up to ~half the ratios can be junk, which drags a median
+    # but cannot imitate the tight cluster the true inks form. The leaked colours
+    # are re-separated in corrected space below; any that remain score ~0 in the
+    # agreement mean (they are not sheet inks), so the path is not flattered.
+    # Saturation-aware (SI-020): a channel observation at >= CLIP_HIGH is clipped
+    # (true pre-gain value unknowable) and one at <= CLIP_LOW is unstable/floored,
+    # so neither feeds the ratio; a channel with fewer than MIN_GAIN_OBS unclipped
+    # observations falls back neutrally to gain 1.0 with a caveat.
+    m_stack = np.array([measured_bgr[mi] for mi, _, _ in assign_abs])   # (k,3)
+    s_stack = np.array([expected_bgr[ei] for _, ei, _ in assign_abs])   # (k,3)
+    gain = np.ones(3, dtype=np.float64)
+    gain_fallback_channels = []
+    for ch in range(3):
+        ratios = [s_stack[i, ch] / m_stack[i, ch]
+                  for i in range(len(m_stack))
+                  if CLIP_LOW < m_stack[i, ch] < CLIP_HIGH]
+        estimate = _consensus_ratio(ratios)
+        if estimate is not None:
+            gain[ch] = estimate
+        else:
+            gain_fallback_channels.append("BGR"[ch])
+    in_bounds = bool(np.all((gain >= GAIN_MIN) & (gain <= GAIN_MAX)))
+    enough_inks = len(measured_bgr) >= MIN_INKS_FOR_GAIN
+    relationship_ok = in_bounds and enough_inks
+
+    # Undo the gain on the FULL extracted palette (inks + products) and re-separate
+    # products in the corrected space -- there the multiply overprint arithmetic
+    # holds again, so the couple of overprint colours that leaked into the ink set
+    # under white balance are correctly removed before the corrected ink set is
+    # matched (SI-020). Falls back to the ink set alone if the full palette was not
+    # carried in the measurement. Each corrected colour carries a clip mask
+    # (which channels were measured saturated), so the re-match can score clipped
+    # channels one-sidedly (see _clip_aware_delta_e).
+    from recogniser import measure_grid as _mg
+    extracted = getattr(measurement, "detail", {}).get("extracted")
+    if extracted:
+        raw_palette = [np.array(bgr, dtype=np.float64) for bgr, _ in extracted]
+        corrected_palette = [(tuple(np.clip(r * gain, 0.0, 255.0)), f)
+                             for r, (_, f) in zip(raw_palette, extracted)]
+        # Clip mask per corrected colour. The gain map is injective on unclipped
+        # values, so keying by the corrected tuple is safe; on the rare collision
+        # (two clipped raws collapsing) the masks are OR-ed.
+        clip_by_tuple = {}
+        for r, (ct, _) in zip(raw_palette, corrected_palette):
+            mask = tuple(bool(v >= CLIP_HIGH) for v in r)
+            prev = clip_by_tuple.get(ct)
+            clip_by_tuple[ct] = mask if prev is None else \
+                tuple(a or b for a, b in zip(prev, mask))
+        corrected_set, _, _ = _mg.separate_products(corrected_palette)
+        corrected_ink_bgr = [np.array(bgr, dtype=np.float64) for bgr, _ in corrected_set]
+        clip_masks = [clip_by_tuple[bgr] for bgr, _ in corrected_set]
+    else:
+        corrected_ink_bgr = [np.clip(bgr * gain, 0.0, 255.0) for bgr in measured_bgr]
+        clip_masks = [tuple(bool(v >= CLIP_HIGH) for v in bgr) for bgr in measured_bgr]
+
+    dist_rel = [[_clip_aware_delta_e(c, mask, expected_bgr[ei], expected_labs[ei])
+                 for ei in range(len(expected_labs))]
+                for c, mask in zip(corrected_ink_bgr, clip_masks)]
+    assign_rel = _greedy_assign_matrix(dist_rel)
+    rel_deltas = [d for _, _, d in assign_rel]
+    per_ink_rel = [agreement_linear(d, 0.0, delta_e_tol) for d in rel_deltas]
+    agreement_rel = float(np.mean(per_ink_rel)) if relationship_ok else 0.0
+    n_clipped_inks = sum(1 for mask in clip_masks if any(mask))
+
+    # Rank-order corroboration (per channel, over the absolute assignment).
+    rank_corrs = []
+    for ch in range(3):
+        rank_corrs.append(_rank_corr([m_stack[i, ch] for i in range(len(m_stack))],
+                                     [s_stack[i, ch] for i in range(len(s_stack))]))
+    rank_corr = float(np.mean(rank_corrs))
+
+    implied_applied_gain = [round(float(1.0 / g), 4) if g != 0 else None for g in gain]
+    agreement = max(agreement_abs, agreement_rel)
+
+    # Per-ink detail: the absolute assignment (measured ink -> nearest sheet ink
+    # and its delta-E). The relationship path re-separates in corrected space so
+    # its ink set differs; it is summarised in aggregate below, not paired here.
+    per_ink = [{
+        "measured_bgr": [round(float(measured_bgr[mi][c]), 1) for c in range(3)],
+        "matched_ink": expected_hexes[ei],
+        "delta_e_absolute": round(dabs, 3),
+    } for mi, ei, dabs in assign_abs]
+    return {
+        "agreement": agreement,
+        "expected": expected_hexes,
+        "measured": [p["measured_bgr"] for p in per_ink],
+        "detail": {
+            "delta_e_tolerance": delta_e_tol,
+            "path": "max(absolute, relationship)  (SI-020)",
+            "agreement_absolute": round(agreement_abs, 4),
+            "agreement_relationship": round(agreement_rel, 4),
+            "mean_delta_e_absolute": round(float(np.mean(abs_deltas)), 3),
+            "mean_delta_e_relationship": round(float(np.mean(rel_deltas)), 3),
+            "correction_gain_bgr": [round(float(g), 4) for g in gain],
+            "implied_applied_gain_bgr": implied_applied_gain,
+            "gain_in_bounds": in_bounds,
+            "relationship_applicable": relationship_ok,
+            "n_inks": len(measured_bgr),
+            # Saturation handling (SI-020): channels measured >= CLIP_HIGH are
+            # excluded from the gain estimate and scored one-sidedly after
+            # correction (consistent-with-sheet counts as match; a bound already
+            # past the sheet value keeps its real mismatch).
+            "clipping": {
+                "clip_high": CLIP_HIGH,
+                "clip_low": CLIP_LOW,
+                "n_clipped_inks": n_clipped_inks,
+                "gain_fallback_channels": gain_fallback_channels,
+                "note": "clipped channels excluded from gain estimate; "
+                        "one-sided (lower-bound) scoring after correction; "
+                        "fallback channels use neutral gain 1.0",
+            },
+            "rank_correlation_bgr": [round(c, 4) for c in rank_corrs],
+            "rank_correlation": round(rank_corr, 4),
+            "per_ink": per_ink,
+        },
     }
 
 
@@ -209,6 +562,7 @@ def score_sheet(sheet: dict, measured: dict) -> dict:
     """
     measurements = measured["measurements"]
     features = sheet.get("signature_locus", {}).get("features", [])
+    structure_type = sheet.get("structure", {}).get("type")
 
     per_feature = []
     observed_weight = 0.0     # id-feature weight we actually scored
@@ -268,11 +622,28 @@ def score_sheet(sheet: dict, measured: dict) -> dict:
                 entry["note"] = "no inks observed"
                 per_feature.append(entry)
                 continue
-            ink = _score_ink(feature, m)
+            # Grid sheets use the two-path (absolute + white-balance-relationship)
+            # match (SI-020); band sheets keep the byte-identical v0 absolute match.
+            ink = (_score_ink_grid(feature, m) if structure_type == "grid"
+                   else _score_ink(feature, m))
             agree = ink["agreement"]
             n = m.n
             entry["measured"] = ink["measured"]
             entry["detail"] = ink["detail"]
+        elif measure_name == "overprint_multiply_consistency":
+            # Verification (audit s5): agreement falls with the worst product
+            # residual; a large residual (broken multiply arithmetic) flags the
+            # claim. No overlaps observed -> unobserved, NOT a failure.
+            m = measurements.get("overprint_multiply_consistency")
+            if m is None or m.n <= 0 or m.value is None:
+                entry["note"] = "no two-ink overlaps observed (overprint unverified)"
+                per_feature.append(entry)
+                continue
+            residual = float(m.value)
+            agree = agreement_linear(residual, 0.0, OVERPRINT_RESIDUAL_TOL)
+            n = m.n
+            entry["measured"] = {"max_product_residual": round(residual, 3)}
+            entry["detail"] = getattr(m, "detail", {})
         elif measure_name in measurements:
             m = measurements[measure_name]
             if m.n <= 0 or m.value is None:

@@ -275,22 +275,34 @@ def test_iso002_does_not_crash_and_scores_below_001(surface0):
     assert r002["verdict"] != "identified"
 
 
-def test_iso002_unknown_measures_reported_unobserved_gracefully(surface0):
-    """Measures 002 names but recogniser v0 has no measurer for
-    (grid_module_detect, stripe_duty, staircase_step_angle,
-    overprint_multiply_consistency) are reported unobserved with a note -- never
-    a crash. primitive_frequency_mix is skipped as sheet-unmeasured (SI-008)."""
-    r002 = _result(recognise(surface0, str(GRAMMARS)), "iso-002")
-    grid = _feature(r002, "grid_module")
-    assert grid["observed"] is False
-    assert "no measurer" in grid.get("note", "")
+def test_iso002_grid_family_measures_gracefully_on_band_image(surface0):
+    """Phase 6 changed this: the grid measurer family now EXISTS, so a 001 band
+    image is also measured by it (claim.STRUCTURE_MEASURERS) and iso-002 is scored
+    against real grid measurements -- honestly, and still well below 001.
 
+    The pre-Phase-6 version of this test asserted 'no measurer for grid_module';
+    that documented the absence this phase fills. The invariant that MUST hold is
+    honest cross-discrimination: iso-002's nine-ink address is not met by a band
+    surface's two greens, and primitive_frequency_mix stays reserved (SI-008)."""
+    r002 = _result(recognise(surface0, str(GRAMMARS)), "iso-002")
+
+    # The grid family ran end to end: the grid module (weight-0 normalisation) and
+    # the ink-set extractor both produced real measurements -- never a crash.
+    assert _feature(r002, "grid_module")["observed"] is True
+    assert _feature(r002, "ink_set")["observed"] is True
+    # ...but two greens are not the nine ISO inks: colour agreement stays low and
+    # the relationship path is disabled (< 3 inks, SI-020), so no leniency leaks.
+    assert _feature(r002, "ink_set")["agreement"] < 0.34
+
+    # primitive_frequency_mix is reserved + skipped regardless (SI-008).
     prim = _feature(r002, "primitive_frequency_mix")
     assert prim["observed"] is False
     assert "SI-008" in prim.get("note", "")
 
-    # Its one real measurer (ink_set) did run: colour is scored, structure is not.
-    assert _feature(r002, "ink_set")["observed"] is True
+    # No two-ink overprints on a two-green band surface: overprint unobserved,
+    # which is NOT a verification failure.
+    assert _feature(r002, "overprint_consistency")["observed"] is False
+    assert "iso-002" not in [r002["sheet_id"]] or r002["verdict"] != "identified"
 
 
 # =========================================================================
