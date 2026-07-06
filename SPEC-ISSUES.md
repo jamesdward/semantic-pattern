@@ -431,3 +431,45 @@ measured in a shared feature space. **Two consequences the spec should price in:
    feature (here: commit `primitive_frequency_mix`, SI-008) or state explicitly that its enrolment
    distance is single-dimensional and therefore that same-family collision is unguarded — because a
    one-feature signature has no minimum distance to defend once that feature is shared.
+
+## SI-023 · §11/§10 · decided-here — The field battery runs the pipeline UNMODIFIED on raw photos, and puts its human-readable label in the page margin
+
+Spec §11 makes L3 depend on recognition "under the hostile-conditions test battery (print, camera,
+light, angle, damage)" but does not say (a) whether a conforming recogniser may *preprocess* a
+photograph — deskew, colour-correct, denoise — before the "identical pipeline" of §8, or (b) where the
+human-readable fallback §10 requires on an identity-bearing artefact may sit relative to the pattern.
+The print-and-photograph path (`battery/printpack.py`, `battery/ingest/`) makes both concrete.
+**Choice:** (a) v0 ingestion runs `recogniser.claim.recognise` on each photo with **no** photo-special
+preprocessing — byte-for-byte the pipeline the synthetic battery uses — so a raw-phone-photo failure is
+a *reported result* (a per-row status and a "not_recognised"/insufficient line in `summary.md`), never
+silently repaired. A v0 that quietly pre-corrected photos could not measure what real capture costs
+recognition, which is the entire L3 question; any preprocessing should be an explicit, declared,
+reproducible stage the spec names, not an implementation convenience. (b) Each print sheet carries a
+small label (surface id + seed + "print at 100%") in the **page margin**, whose bounding box is asserted
+disjoint from the pattern rectangle (`test_ingest`), so nothing is added *inside* the surface — honouring
+principle 2 / §2 ("no bounded marks, no fiducial code regions; the whole surface is the pattern") while
+still providing the §10 human-readable fallback. Nothing on the label is measured or fed to the
+recogniser; the photographer crops the pattern, not the label. **Spec consequence:** §11 should state
+(i) whether field-battery recognition is defined on the raw capture or on a declared preprocessing
+front-end (and if the latter, fix that stage so two conforming recognisers agree), and (ii) that a
+required human-readable fallback lives outside the signature-bearing surface — a margin/label region is
+not part of the pattern and MUST NOT be recovered or scored as if it were.
+
+## SI-024 · §11/§5 · decided-here — The field battery must gather ink-rich framings, or the diagonal-white-balance question is unanswerable
+
+`experiments/exp-002-cross-grammar` §6 sets three questions Phase 4b must answer, and the ingest
+`summary.md` answers each from data or marks it "insufficient data". Question (a) — *is real camera white
+balance diagonal?* — is answered from the iso-002 ink two-path working: the implied applied gain (1/g),
+its in-bounds flag, and the per-channel rank correlation (SI-020). But the relationship colour path only
+runs when a photo shows at least `MIN_INKS_FOR_GAIN=3` distinct inks (SI-020's credibility floor against
+a per-channel gain overfitting a handful of colours). A field battery shot mostly at distance, or on
+small fragments, can therefore recognise 002 surfaces yet **never accumulate a single row able to answer
+(a)** — the capture protocol silently gates the conclusion. **Choice:** the printed 002 sheets are dense
+12×8 grids (many inks per frame) and the INSTRUCTIONS ask explicitly for at least the "fills the frame"
+condition per surface, so the ink-rich framings that (a) needs are captured by construction; the summary
+still degrades to "insufficient data" honestly when they are absent. **Spec consequence:** §11 should
+recognise that a hostile-conditions battery's *coverage requirements are feature-dependent* — a
+relationship/ordering colour signature (Milestone 2, §5) can only be validated for illuminant-robustness
+from captures rich enough to estimate the correction, so the field-battery protocol must state a minimum
+per-feature framing (here: ≥3 inks in frame for the WB-diagonal check) rather than treating "photograph
+the surface under varied conditions" as sufficient for every question the battery is meant to answer.

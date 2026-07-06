@@ -1,6 +1,6 @@
-"""Tests for the Phase-4 test battery: degradations, harness, ingest.
+"""Tests for the Phase-4 test battery: degradations and the synthetic harness.
 
-Three parts, mirroring the project rule that machinery is tested before it is
+Two parts, mirroring the project rule that machinery is tested before it is
 trusted:
 
   1. Degradation unit tests -- each transform preserves shape/dtype, is
@@ -10,8 +10,9 @@ trusted:
   2. A ``--quick`` end-to-end battery run into a tmp dir: asserts the manifest,
      CSV and curve PNGs exist, the CSV has the declared columns and a non-trivial
      row count, and the run is reproducible.
-  3. Ingest structure: a generated PNG stands in for a photo and is recognised
-     through the identical pipeline, producing a raw_results-shaped row.
+
+The Phase-4b real-photo ingestion path (``battery.ingest``) and the print pack
+(``battery.printpack``) have their own suite in ``tests/test_ingest.py``.
 """
 
 import csv
@@ -25,7 +26,6 @@ from generator import cascade
 from generator.fragments import sample_fragment
 from battery import degrade
 from battery.run import BatteryConfig, quick_config, run_battery, CSV_FIELDS
-from battery.ingest import ingest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SHEET_PATH = REPO_ROOT / "grammars" / "bar-cascade-001.yaml"
@@ -176,44 +176,3 @@ def test_impostors_do_not_reach_identified_in_quick_run(tmp_path):
         rows = list(csv.DictReader(fh))
     impostor_verdicts = {r["verdict_001"] for r in rows if r["arm"] == "impostor"}
     assert "identified" not in impostor_verdicts
-
-
-# =========================================================================
-# 3. Ingest structure (a generated PNG stands in for a photo)
-# =========================================================================
-
-def test_ingest_recognises_photo_and_writes_csv(tmp_path):
-    sheet = load_sheet(SHEET_PATH)
-    photo = tmp_path / "shot_0001.png"
-    # Render at module 200 (as the canonical recogniser test does) so a clean
-    # full surface reaches 'identified'; 160 tops out at 'candidate'.
-    cascade.render_png(sheet, photo, n_bands=N_BANDS, module_px=200, seed=0,
-                       orientation_deg=0.0)
-    manifest = tmp_path / "manifest.yaml"
-    manifest.write_text(
-        "surface_id: bar-cascade-001\n"
-        "photos:\n"
-        "  - file: shot_0001.png\n"
-        "    surface_id: bar-cascade-001\n"
-        "    conditions:\n"
-        "      light: office\n"
-        "      angle_deg: 0\n"
-    )
-    out_csv = tmp_path / "raw_results.csv"
-    rows = ingest(tmp_path, manifest, out_csv=out_csv)
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["arm"] == "real"
-    assert row["top_sheet"] == "bar-cascade-001"
-    assert row["verdict_001"] == "identified"   # a clean full render is identified
-    # CSV shape matches the synthetic battery exactly.
-    with open(out_csv, newline="") as fh:
-        reader = csv.DictReader(fh)
-        assert reader.fieldnames == CSV_FIELDS
-
-
-def test_ingest_missing_photo_raises(tmp_path):
-    manifest = tmp_path / "manifest.yaml"
-    manifest.write_text("photos:\n  - file: nope.png\n    surface_id: bar-cascade-001\n")
-    with pytest.raises(FileNotFoundError):
-        ingest(tmp_path, manifest)

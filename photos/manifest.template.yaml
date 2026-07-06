@@ -1,0 +1,40 @@
+# Manifest for the print-and-photograph field battery (Phase 4b).
+#
+# Copy this file to photos/manifest.yaml and add one entry per photo you take.
+# - file:       the exact filename in the photos/ folder (names carry no meaning).
+# - surface_id: MUST match the label printed in the sheet's bottom margin
+#               (001-s0..001-s2 for the bar-cascade-001 sheets, 002-s0..002-s2
+#               for the iso-002 sheets).
+# - grammar:    bar-cascade-001 (for the 001-* sheets) or iso-002 (for the 002-*).
+# - conditions: how you shot it; logged verbatim into raw_results.csv.
+#     lighting:  daylight | warm_indoor | cool_led_or_shade
+#     angle_deg: 0 | 30 | 60         (straight-on / ~30 deg / ~60 deg)
+#     distance:  fills_frame | far_2m
+#     printer:   your printer model (free text)
+#     paper:     plain | matte_photo | ...
+# - notes:      free-form.
+#
+# The two entries below are EXAMPLES -- delete them and add your own.
+
+surface_id: null        # optional default surface_id for entries that omit their own
+photos:
+  - file: IMG_0001.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: daylight
+      angle_deg: 0
+      distance: fills_frame
+      printer: "<your printer model>"
+      paper: plain
+    notes: ""
+  - file: IMG_0002.jpg
+    surface_id: 002-s0
+    grammar: iso-002
+    conditions:
+      lighting: warm_indoor
+      angle_deg: 30
+      distance: fills_frame
+      printer: "<your printer model>"
+      paper: plain
+    notes: "example second entry"
