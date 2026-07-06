@@ -1,0 +1,270 @@
+# Pilot screen-arm batch: 001-s0 displayed on an Apple Studio Display,
+# photographed on an iPhone (HEIC converted to JPEG q95 via sips).
+# TrueTone x brightness sweep; angles/distances estimated from the images
+# by the director (four-shot sequence per condition, verified visually).
+surface_id: 001-s0
+photos:
+  - file: IMG_2263.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 0
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 100%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2264.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 100%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2265.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: far_2m
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 100%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2266.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 60
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 100%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2267.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 0
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 75%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2268.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 75%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2269.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: far_2m
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 75%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2270.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 60
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 75%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2271.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 0
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 25%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2272.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 25%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2273.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: far_2m
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 25%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2274.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 60
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone on, brightness 25%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2275.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 0
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 25%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2276.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 25%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2277.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: far_2m
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 25%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2278.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 60
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 25%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2279.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 0
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 75%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2280.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 75%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2281.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: far_2m
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 75%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2282.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 60
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 75%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2283.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 0
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 100%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2284.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 100%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2285.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 30
+      distance: far_2m
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 100%, dark room with warm lamp; framing estimated from image"
+  - file: IMG_2286.jpg
+    surface_id: 001-s0
+    grammar: bar-cascade-001
+    conditions:
+      lighting: normal_room
+      angle_deg: 60
+      distance: fills_frame
+      medium: screen
+      printer: none
+      paper: screen
+    notes: "Apple Studio Display, TrueTone off, brightness 100%, dark room with warm lamp; framing estimated from image"

@@ -583,3 +583,15 @@ published so two recognisers agree; and (c) that its discrimination may be **une
 alphabet** (strong where compositions differ in primitive *vocabulary*, weak where they reconcentrate
 the same primitives) — so a family leaning on it must publish where its mix signature is load-bearing,
 exactly as §3.7 already asks each grammar to declare *where* its signature lives.
+
+## SI-025 · §8 · open — Recognition step 1 assumes the fragment IS the pattern; real photos are scenes
+
+§8 step 1 normalises "perspective, scale via structure detection; orientation via declared
+orientation-breaking features" — but never says how a recogniser finds the surface inside a
+photograph that is mostly *not* pattern (bezel, page margin, desk). exp-003's pilot showed this
+is the dominant real-world failure: 0/24 whole-frame photos recognised (aggregate ≈ 0.02)
+while a ten-line classical locator feeding the identical pipeline recovered near-correct
+measurements immediately. The spec needs a "locate candidate surface regions" stage (or must
+state that conforming recognisers may assume pre-localised input, which would exclude the
+photograph use case). v0 choice pending: a classical locator + page-quad rectification stage
+ahead of the existing pipeline, with the pilot photos as the acceptance corpus.
