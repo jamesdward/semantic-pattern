@@ -16,7 +16,18 @@ spec_version: "0.1"
 sheet:
   id: iso-002
   name: ISO (Studio.Build) -- audit reconstruction
-  grammar_version: "0.0.0"     # reconstruction, not an owner-committed version
+  # 1.1.0: commits primitive_frequency_mix as a measured identification carrier
+  # (was reserved-unmeasured at weight 0.25, SI-008), and rebalances the locus
+  # weights (ink 0.75->0.60, mix ->0.40) so a same-ink/different-composition
+  # impostor no longer identifies -- closing the dangerous half of SI-022
+  # (SI-026). IMPORTANT (SI-018): the committed mix vector describes THIS
+  # audit reconstruction's composition model (the generator's uniform-type
+  # dialect, measured back out), NOT Studio.Build's original proportions. The
+  # audit s6.2 names the primitive mix as an identification carrier but publishes
+  # no measured proportions; measuring the real identity's mix would need
+  # Studio.Build's actual assets. This sheet commits what it can measure and
+  # says so. Still an audit reconstruction, never an enrolment (spec 6.2).
+  grammar_version: "1.1.0"     # reconstruction, not an owner-committed version
   status: audit-reconstruction
   issuer: null                 # not enrolled; the owner alone may issue
   identity_endpoint: null
@@ -98,8 +109,12 @@ variation_model:
     - ground
 
 signature_locus:
-  # audit s6: after discounting canonical structure, the ink set carries the load;
-  # the primitive/composition mix carries the rest but is unmeasured here.
+  # audit s6: after discounting canonical structure, identification is carried by
+  # TWO measured features -- the ink set (point 1, the address) and the primitive
+  # mix (point 2, the proportions the alphabet is used in). At v1.1.0 both are
+  # measured; the weights are split so neither alone reaches the identified
+  # threshold, so a same-ink impostor with a different composition cannot pass on
+  # inks alone (SI-022 / SI-026).
   features:
     - id: ink_set
       measure: ink_set_match
@@ -116,18 +131,48 @@ signature_locus:
       tolerance:
         delta_e: 10
       role: identification
-      weight: 0.75             # audit s6 point 1: the inks are the address
+      # 0.60 (was 0.75). Lowered so ink agreement alone (a same-ink impostor's
+      # best case) sits below the 0.70 identified threshold; the mix must also
+      # agree to identify (SI-026). Still the larger share: inks are the address.
+      weight: 0.60
       sample_unit: inks_observed
       status: measured
 
     - id: primitive_frequency_mix
       measure: primitive_frequency_mix
-      expected: null           # audit s6 point 2 names it, publishes no proportions
-      tolerance: null
+      # The INTERIOR instance-share vector over the five alphabet primitives, in
+      # the order [filled_cell, inscribed_circle, stripe_bar, staircase_diagonal,
+      # rounded_cap]. Derived (SI-026) as the MEAN measured mix over a genuine
+      # corpus (seeds x densities 0.35/0.45/0.55 x modules 40/48/64, varying ink
+      # subsets; 108 surfaces), with border-touching components EXCLUDED from the
+      # measurement (a clipped shape biases the estimate) -- the same rule the
+      # measurer applies at recognition time. This is the RECONSTRUCTION's
+      # composition model (SI-018), not the original identity's. Residual biases
+      # (filled_cell over-represented by survival -- compact 1x1 cells merge less
+      # than multi-cell primitives -- and their remnants under the depth-2 cap,
+      # SI-019) are consistent and baked into the vector genuine surfaces match.
+      expected: [0.30, 0.10, 0.24, 0.20, 0.16]
+      # Clipped-linear agreement on L1(measured, expected) / tolerance_eff (SI-001
+      # convention), where tolerance_eff = tolerance x max(1, sqrt(n_ref / n))
+      # with n_ref = 16 (the derivation corpus's typical full-surface interior
+      # instance count; recogniser/score.py N_REF_PRIMITIVES): a share vector from
+      # n instances has ~sqrt(1/n) L1 sampling noise, so small fragments widen the
+      # tolerance instead of being punished as disagreement (the harder
+      # primitives_observed saturation k=2 keeps small-n estimates from
+      # dominating), while at n >= n_ref the committed value applies unchanged --
+      # full-measurement impostor rejection is never loosened. The committed 0.95
+      # is chosen from data (SI-026): bounded BELOW by genuine coverage (max
+      # n-normalised genuine L1 over derivation + held-out corpora is 0.83, so
+      # 0.95 covers every genuine surface with ~15% margin) and ABOVE by impostor
+      # rejection. The nearest same-ink impostor family (all-staircase /
+      # all-filled, whose depth-2-cap remnants read as filled cells) has a
+      # measured full-surface L1 floor of 1.0 -- above tolerance, so its mix
+      # agreement is 0 and its aggregate rests on the ink weight alone (~0.55).
+      tolerance: 0.95
       role: identification
-      weight: 0.25             # weight reserved; see SPEC-ISSUES SI-008
+      weight: 0.40             # committed (was reserved-unmeasured, SI-008)
       sample_unit: primitives_observed
-      status: unmeasured       # recogniser skips and renormalises at runtime
+      status: measured
 
     - id: grid_module
       measure: grid_module_detect

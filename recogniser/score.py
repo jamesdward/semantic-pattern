@@ -32,6 +32,21 @@ numbers -- spec 8 "reproducible"; SI-001 asks for exactly this):
      "delta_e" tolerance). Per-ink agreement is the same clipped-linear curve on
      delta-E / delta_e; the feature agreement is the mean over observed inks.
 
+  3b. Primitive-frequency mix (measure ``primitive_frequency_mix``, SI-026): the
+     measured and expected values are 5-bin instance-share vectors; agreement is
+     the clipped-linear curve on their L1 distance over an n-DEPENDENT effective
+     tolerance,
+
+         tolerance_eff = tolerance * max(1, sqrt(N_REF_PRIMITIVES / n))
+
+     because a share vector estimated from n interior instances of a 5-bin
+     multinomial has L1 sampling deviation ~ sqrt(1/n): a small fragment's larger
+     L1 is sampling noise, not disagreement (the n/(n+k) saturation below already
+     handles "we saw little, so confidence is low"). At n >= N_REF_PRIMITIVES the
+     committed tolerance applies unchanged, so full-measurement impostor
+     rejection is never loosened. The claim's working carries n, tolerance_eff
+     and the L1.
+
   4. Sample-size scaling (SI-002): a feature's confidence discounts its agreement
      by how many samples of its declared ``sample_unit`` were seen,
 
@@ -127,6 +142,20 @@ MIN_INKS_FOR_GAIN = 3
 # arithmetic (audit s5 "c1*c2 != c3") and flags the claim's verification.
 OVERPRINT_RESIDUAL_TOL = 12.0
 
+# Reference sample size for the primitive-frequency-mix tolerance (SI-026): the
+# typical INTERIOR classified-instance count of a full surface in the derivation
+# corpus that produced the committed expected vector (grammars/iso-002.yaml,
+# seeds x densities 0.35/0.45/0.55 x modules 40/48/64 on 14x10 grids, border
+# components excluded). The mix feature's effective tolerance is
+#
+#     tolerance_eff = committed_tolerance * max(1, sqrt(N_REF_PRIMITIVES / n))
+#
+# -- a share vector from n instances of a 5-bin multinomial has L1 sampling
+# deviation ~ sqrt(1/n), so a small-n fragment's larger L1 is sampling noise, not
+# disagreement; at n >= N_REF the committed tolerance applies unchanged, so
+# full-surface impostor rejection is never loosened by this rule.
+N_REF_PRIMITIVES = 16
+
 # Sample-size saturation constants per declared sample_unit (SI-002). Small
 # integers: two boundaries already give real cascade evidence, a couple of inks
 # complete the pair, but periods are cheap so they saturate slower.
@@ -139,7 +168,12 @@ SATURATION_K = {
     "striped_regions": 1.0,
     "diagonals": 1.0,
     "overlaps": 1.0,
-    "primitives_observed": 1.0,
+    # 2.0 (not 1.0): the mix is a 5-BIN SHARE VECTOR, not a scalar -- a handful of
+    # instances pins it far less than a handful of periods pins a period, and the
+    # n-dependent tolerance (SI-026) simultaneously widens at small n, so the
+    # saturation must discount harder to keep a noisy-but-lucky small-n mix from
+    # pushing a same-ink impostor fragment over the identified line.
+    "primitives_observed": 2.0,
 }
 DEFAULT_SATURATION_K = 1.0
 
@@ -630,6 +664,52 @@ def score_sheet(sheet: dict, measured: dict) -> dict:
             n = m.n
             entry["measured"] = ink["measured"]
             entry["detail"] = ink["detail"]
+        elif measure_name == "primitive_frequency_mix":
+            # Primitive-mix identification carrier (SI-026, closing the same-ink
+            # half of SI-022). Agreement is clipped-linear on the L1 distance
+            # between the measured and expected instance-share vectors, over the
+            # declared scalar tolerance (SI-001 convention). n = classified
+            # instances scales confidence (SI-002): a fragment with a handful of
+            # primitives yields a noisy mix, so its small n discounts it rather
+            # than letting the estimate dominate. n = 0 -> unobserved (skipped and
+            # renormalised away, never scored 0).
+            m = measurements.get("primitive_frequency_mix")
+            expected_vec = feature.get("expected")
+            tol = feature.get("tolerance")
+            if m is None or m.n <= 0 or m.value is None:
+                entry["note"] = "no classifiable primitives observed in this fragment"
+                per_feature.append(entry)
+                continue
+            if not isinstance(expected_vec, (list, tuple)) or not isinstance(tol, (int, float)):
+                entry["note"] = ("primitive_frequency_mix expects a vector expected "
+                                 "and scalar tolerance; skipped")
+                per_feature.append(entry)
+                continue
+            measured_vec = list(m.value)
+            l1 = float(np.abs(np.asarray(measured_vec, dtype=float)
+                              - np.asarray(expected_vec, dtype=float)).sum())
+            n = m.n
+            # n-DEPENDENT EFFECTIVE TOLERANCE (SI-026). The mix is a share vector
+            # estimated from n interior instances of a 5-bin multinomial: an
+            # HONEST measurement's expected L1 sampling deviation scales
+            # ~ sqrt(1/n), so a small-n fragment's larger L1 is sampling noise,
+            # not disagreement, and must not be punished as such (the existing
+            # n/(n+k) saturation already handles "we saw little -> low
+            # confidence"). The committed tolerance is calibrated at the typical
+            # full-surface interior instance count N_REF_PRIMITIVES (from the
+            # derivation corpus); below it the tolerance widens by sqrt(n_ref/n),
+            # at or above it tolerance_eff == the committed value, so full-surface
+            # impostor rejection is never loosened.
+            tol_eff = float(tol) * max(1.0, np.sqrt(N_REF_PRIMITIVES / n))
+            agree = agreement_linear(l1, 0.0, tol_eff)
+            entry["measured"] = [round(float(v), 4) for v in measured_vec]
+            entry["detail"] = {"l1_distance": round(l1, 4),
+                               "tolerance_committed": float(tol),
+                               "tolerance_eff": round(tol_eff, 4),
+                               "n_ref": N_REF_PRIMITIVES,
+                               "n": int(n),
+                               "order": getattr(m, "detail", {}).get("order"),
+                               **getattr(m, "detail", {})}
         elif measure_name == "overprint_multiply_consistency":
             # Verification (audit s5): agreement falls with the worst product
             # residual; a large residual (broken multiply arithmetic) flags the

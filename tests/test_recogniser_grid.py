@@ -296,19 +296,19 @@ def test_relationship_path_disabled_below_min_inks(sheet):
 
 
 def test_grid_render_top_is_iso002(render):
-    """A clean 002 render is the top verdict against iso-002 (candidate-or-better),
-    with coverage reflecting the unmeasured primitive mix (SI-008): only the ink
-    set carries measurable identification weight, so coverage is 1.0 and the
-    reserved mix weight is renormalised away, not counted."""
+    """A clean 002 render is the top verdict against iso-002 (candidate-or-better).
+    At grammar_version 1.1.0 the primitive mix is a MEASURED identification carrier
+    (SI-026), so on a full render both id-features (ink set + mix) are observed and
+    coverage is 1.0."""
     surface, _ = render
     claim = recognise(surface, str(GRAMMARS))
     top = claim["results"][0]
     assert top["sheet_id"] == "iso-002"
     assert top["aggregate_confidence"] >= score.CANDIDATE_THRESHOLD
     assert top["verdict"] in ("candidate", "identified")
-    # SI-008: the primitive mix is reserved + skipped, so it is not in coverage.
+    # SI-026: the primitive mix is now measured and observed on a full render.
     prim = _feature(top, "primitive_frequency_mix")
-    assert prim["observed"] is False and "SI-008" in prim.get("note", "")
+    assert prim["observed"] is True and prim["n"] > 0
     assert top["coverage"] == pytest.approx(1.0, abs=1e-6)
 
 
