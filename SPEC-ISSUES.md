@@ -258,6 +258,19 @@ makes the window far wider than its fitting margin, so those fragments are hones
 tallied (`skipped_geometry` in the manifest) rather than measured — a sampler bug to fix before
 90° coverage is complete, not a spec gap.
 
+**Update (Phase 7, exp-002): gap 2 is RESOLVED.** Root cause: the rotated sampler warped the whole
+surface to a full W×H canvas and then cropped an axis-aligned w×h box at `(cx − w/2, cy − h/2)`; for a
+window wider than it is tall the fitting margin near 90° is `≈ h/2 < w/2`, so the crop's left edge
+`x0 = round(cx − w/2)` went **negative** and Python's negative-index slicing read it as `W + x0`,
+producing an empty slice (measured: 93/1000 frac-0.5 fragments at 85–95°). Fixed in
+`generator/fragments.py` by framing the `warpAffine` directly onto the window (translate so the window
+centre lands at `(w/2, h/2)` of a `(w, h)` output), so the returned fragment is always exactly `(h, w)`
+and a negative slice is impossible at any rotation 0–360°. Pixel-equivalent to the old crop for windows
+that already fit, so all prior tests pass unchanged (none had encoded the bug); regression tests at
+85–95° and under extreme aspect jitter are in `tests/test_cross.py`. exp-002 confirms full 90° coverage.
+Gap 1 (the audit-s3 single-band "weak" row unsampled by the genuine frac sweep) remains open for the
+field battery.
+
 ## SI-018 · §3 · decided-here — The audit names a "density"/composition dialect but publishes no composition model, so the grid generator supplies one
 
 Audit 002 (§3, §4 `variation.per_variant: [ink subset, composition, density]`) lists *composition*
@@ -387,3 +400,34 @@ consistency is a **weight-0 verification** signal defined only for in-neighbourh
 between two distinct inks (not a detector of arbitrary blend corruption), and should say whether the
 overlap region may be assumed pre-identified (as the audit had it) or must be recovered from pixels —
 because the two impose very different robustness requirements on a conforming recogniser.
+
+## SI-022 · §5 · open — The published false-positive rate needs a control corpus, and grid-vs-grid distance collapses onto the ink set
+
+Spec §5 makes the false-positive rate against a **control corpus of non-enrolled pattern work** a
+*published property* of a grammar, and requires an enrolment to verify a **minimum distance** from
+previously enrolled grammars, "computed over signature-locus features only (peaks contribute zero)".
+The cross-grammar battery (`experiments/exp-002-cross-grammar`) publishes a false-positive margin — no
+001 fragment reaches even *candidate* against 002 or vice versa (0 of 885; max cross-aggregate 0.268),
+and no impostor reaches *identified* against either sheet — but it does so against a **trivial corpus**:
+two enrolled grammars plus two impostors, and the two grammars sit in **different measurer families**
+(band vs grid, dispatched on `structure.type` in `claim.py`). A 001 fragment scored against 002 has its
+grid/ink features come back unobserved, so 002's *coverage* collapses and the aggregate is floored near
+zero **by construction** — the discrimination is a between-family structural fact, not a distance
+measured in a shared feature space. **Two consequences the spec should price in:**
+
+1. **The control corpus does not exist yet.** §5's "published property" needs the grammar tested against
+   real non-enrolled pattern work (or at least many same-family look-alikes), not one other grammar. The
+   number here is honest but narrow; a corpus and a corpus-construction rule are unspecified.
+
+2. **Grid-vs-grid minimum distance is presently undefined.** iso-002's only identification-weighted
+   locus feature is the ink set (weight 0.75); every structural feature is weight-0 verification (audit
+   §6 peak-discounting) and `primitive_frequency_mix` (weight 0.25) is reserved-`unmeasured` (SI-008). So
+   §5's "distance over signature-locus features only" between two grid grammars reduces to a distance
+   between their ink sets alone — two grid *dialects* that share an ink set are **indistinguishable** to
+   this recogniser, and the nine-ink grid impostor confirms only the easy half (different inks → score
+   ~0), never the dangerous half (same inks, different composition). **Spec consequence:** §5 should (a)
+   define the control corpus and how the false-positive rate is computed and published; and (b) require
+   that a family carrying most of its structure on canonical peaks either measure a second identification
+   feature (here: commit `primitive_frequency_mix`, SI-008) or state explicitly that its enrolment
+   distance is single-dimensional and therefore that same-family collision is unguarded — because a
+   one-feature signature has no minimum distance to defend once that feature is shared.

@@ -138,19 +138,31 @@ def sample_fragment(
             )
         cx = float(rng.uniform(margin_x, W - margin_x))
         cy = float(rng.uniform(margin_y, H - margin_y))
-        # Rotate the surface by -rotation_deg about the centre so the window,
-        # which is tilted by +rotation_deg in the surface, becomes axis-aligned.
+        # Warp the surface by -rotation_deg about the centre (so the tilted window
+        # becomes axis-aligned) AND translate so the window centre lands at
+        # (w/2, h/2) of a w x h output -- i.e. frame the warp directly onto the
+        # window. warpAffine renders the whole w x h window in one pass, so the
+        # returned fragment is ALWAYS exactly (h, w).
+        #
+        # This replaces the earlier "warp to a full W x H canvas, then crop an
+        # axis-aligned w x h box at (cx-w/2, cy-h/2)" approach, which had a bug
+        # (SI-017 gap 2): near 90 deg a window wider than it is tall has
+        # margin_x ~= h/2 < w/2, so cx could be < w/2 and the crop's left edge
+        # x0 = round(cx - w/2) went NEGATIVE; Python's negative-index slicing then
+        # read x0 as W+x0, producing an empty (zero-size) window. Rendering the
+        # window directly cannot slice negatively, so no rotation 0-360 degenerates.
+        # For a window that already fit under the old code the output is
+        # pixel-equivalent (same rotation, same centre, just framed to the window).
         M = cv2.getRotationMatrix2D((cx, cy), -rotation_deg, 1.0)
-        rotated = cv2.warpAffine(
+        M[0, 2] += (w / 2.0) - cx
+        M[1, 2] += (h / 2.0) - cy
+        fragment = cv2.warpAffine(
             surface,
             M,
-            (W, H),
+            (w, h),
             flags=cv2.INTER_LINEAR,
             borderMode=cv2.BORDER_REPLICATE,
         )
-        x0 = int(round(cx - w / 2.0))
-        y0 = int(round(cy - h / 2.0))
-        fragment = rotated[y0 : y0 + h, x0 : x0 + w].copy()
         origin = (int(round(cx - margin_x)), int(round(cy - margin_y)))
         x_left = int(round(cx - margin_x))
         x_right = int(round(cx + margin_x))
