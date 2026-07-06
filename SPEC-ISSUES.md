@@ -206,3 +206,54 @@ the coverage denominator (reserved, not owed); weight of features the sheet expe
 recogniser could not observe (n = 0) stays in the denominator, so it honestly drags coverage
 down. The spec should adopt the three-number output (or an equivalent that keeps match-quality
 and coverage separable) rather than a single conflated confidence.
+
+## SI-016 · §8/§11 · open — A canonical-peak impostor leaks the phase = duty relation *because* the genome was tuned off the peak
+
+The Phase-4 battery (`experiments/exp-001-synthetic-battery`) confirms SI-014 empirically and
+turns up its mirror image on the impostor side. The three relational-fingerprint features of 001
+are ratio (weight 0.30), duty (0.20) and the `phase == duty` relation (0.30); the tune moved the
+ratio 2.00 → 1.94 to leave the crowded power-of-two peak. **Consequence measured here:** a
+canonical-peak impostor rendered at ratio **2.00** (with phase = duty = 1/3, and 001's inks by
+construction) can *locally* measure its own `phase == duty` relation at any boundary — because at
+the commensurate ratio 2.00 every second fine stripe realigns with a coarse stripe, so the
+inter-band offset is a single locally recoverable number (SI-014's corollary, run forwards). The
+genuine tuned grammar at 1.94 *spent* that local measurability, so its interior fragments score
+the relation ≈ 0.02 while the ratio-2.00 impostor scores it ≈ 0.88. Net effect in the data: the
+impostor's ratio and duty agreements both collapse to ≈ 0 (2.00 and 0.333 are each more than a
+tolerance off 1.94 / 0.31), but colour (shared by construction, weight 0.20) plus the leaked
+relation (weight 0.30) lift 13/168 of its fragments just over the **candidate** line (max
+aggregate 0.418) at mid fractions — **never `identified`** (the two collapsed features cap it).
+The headline discipline holds (no impostor reaches identification), but the near-miss is real and
+diagnosable. **Spec consequence:** a relational fingerprint whose measurability depends on the
+operands' *commensurability* is more measurable for an on-peak impostor than for the off-peak
+genuine grammar — a perverse incentive the tuning guidance (§6.2) does not currently price in.
+The spec should either (a) require relational features to be scored only when an origin/anchor
+pins the relation for the enrolled grammar too (so genuine and impostor are measured on equal
+terms), or (b) weight a relation feature by how *distinctively* its value sits (phase = duty = 1/3
+is itself a crowded coordinate; phase = duty = 0.31 is not), so a relation shared at a canonical
+value carries less than one shared at a tuned value. Colour is not a discriminator in this arm at
+all (impostors carry 001's exact inks on purpose), which is why the entire false-positive margin
+rests on the structural features — as the audit intended.
+
+## SI-017 · §11 · decided-here — The synthetic battery is not the field battery; L3 stays open
+
+Spec §11 makes L3 ("Field-proven") depend on recognition "under the hostile-conditions test
+battery (print, camera, light, angle, damage)" and says the L3 criteria are "deliberately
+unfinished until that data exists". This phase produces the *synthetic* half of that data:
+deterministic, parameterised degradations (`battery/degrade.py`) standing in for each field axis,
+swept against the fragment/rotation grid, with a real-photo ingestion seam (`battery/ingest/`)
+defined and tested but **not yet exercised on real captures** (print-and-photograph is out of
+scope this session). **Choice:** the battery reports L2-style evidence (an open recogniser
+identifying generated surfaces from fragments at stated confidence under stated synthetic
+conditions) and leaves L3 explicitly unmet until `battery.ingest` is run on
+printed-and-photographed surfaces with a published manifest. The spec should say whether synthetic
+degradation evidence counts toward L3 at all, or only as L2 corroboration; this implementation
+treats it as the latter. Two v0 gaps the field battery must also close, surfaced by this run and
+not silently capped: (1) the genuine fragment sweep uses fractions ≥ 0.05 at module 200 px, so a
+window is always ≥ ~223 px against a 200 px module and therefore always spans ≥ 1 boundary — the
+audit-s3 "part of one band" (single-band, coverage-0.40) row is characterised here only by the
+uniform-stripe impostor and the recogniser unit tests, not by the genuine frac sweep; and (2) the
+Phase-2 rotated fragment sampler degenerates to a zero-size window at ≈ 90° when aspect jitter
+makes the window far wider than its fitting margin, so those fragments are honestly skipped and
+tallied (`skipped_geometry` in the manifest) rather than measured — a sampler bug to fix before
+90° coverage is complete, not a spec gap.
