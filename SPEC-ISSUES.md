@@ -584,14 +584,89 @@ alphabet** (strong where compositions differ in primitive *vocabulary*, weak whe
 the same primitives) — so a family leaning on it must publish where its mix signature is load-bearing,
 exactly as §3.7 already asks each grammar to declare *where* its signature lives.
 
-## SI-025 · §8 · open — Recognition step 1 assumes the fragment IS the pattern; real photos are scenes
+## SI-025 · §8 · decided-here — Recognition step 1 assumes the fragment IS the pattern; real photos are scenes
 
 §8 step 1 normalises "perspective, scale via structure detection; orientation via declared
 orientation-breaking features" — but never says how a recogniser finds the surface inside a
 photograph that is mostly *not* pattern (bezel, page margin, desk). exp-003's pilot showed this
 is the dominant real-world failure: 0/24 whole-frame photos recognised (aggregate ≈ 0.02)
 while a ten-line classical locator feeding the identical pipeline recovered near-correct
-measurements immediately. The spec needs a "locate candidate surface regions" stage (or must
-state that conforming recognisers may assume pre-localised input, which would exclude the
-photograph use case). v0 choice pending: a classical locator + page-quad rectification stage
-ahead of the existing pipeline, with the pilot photos as the acceptance corpus.
+measurements immediately.
+
+**Choice made (Phase 10, `recogniser/locate.py`, re-run in `experiments/exp-003-screen-rerun`):**
+a classical, deterministic **locate → rectify** stage is inserted ahead of the unchanged
+per-family pipeline. `recogniser.claim.recognise` calls `locate.find_candidate_regions` first;
+scenes take the new path, bare fragments the old one.
+
+  * **Locate** — *colour-coherence, sheet-conditioned* segmentation. Keep connected regions whose
+    colour is within a generous Lab ΔE of ANY enrolled sheet's inks AND that carry interior edge
+    structure. Sheet-conditioning is legitimate: recognition already scores against the enrolled
+    sheets, so keying localisation on their declared inks adds no information the pipeline lacked;
+    it just refuses to hunt for colours no identity uses. GROUND is excluded explicitly — near-white
+    (all channels ≥ 245) AND near-neutral (Lab chroma < 8) pixels never count as ink, because a
+    printed/displayed page is achromatic even when warm-off-white and would otherwise match a pale
+    near-neutral ink (iso-002's teal_grey) and balloon the region to the whole page (measured: duty
+    inflated to 0.66, light ink pulled to near-white before the chroma floor was added).
+  * **Short-circuit** — if the ink-compatible content spans ≥ 90 % of the frame (measured by a
+    robust marginal-projection bbox, outlier-immune), the image is a bare fragment and the
+    byte-identical pre-SI-025 path runs. This is what keeps every synthetic claim unchanged: an
+    all-ink band fragment and a sparse-on-white grid fragment both span the frame and short-circuit.
+  * **Rectify** — trace the pattern square's quad (`approxPolyDP`, min-area-rect fallback) and warp
+    fronto-parallel; if no reliable quad, measure unrectified with a caveat (measurement loss, never
+    a silent guess). A capture-**moiré low-pass** (area-downscale to 800 px before measurement) is
+    part of this stage: a photo of a *screen* carries display-grid/sensor moiré that segments a
+    full-res crop into 12–200 false "bands"; the same crop at 800 px gives the true 5. The search
+    runs on a downscaled proxy; measurement is on the full-res warp (then the low-pass).
+
+The empirical constants (ΔE 34, chroma 8, 800 px) are set from ground/ink physics and marked with
+generalisation risk in the code; the 24 pilot photos are the **acceptance corpus, not a training
+set**. **Result:** 0/24 → **4/24 candidates**, mean target aggregate 0.020 → 0.201 (10×), 11/24
+frames now recover the true 5 bands. Localisation was the dominant failure and is fixed; the
+residual (still 0 identified) is band-**segmentation robustness** under capture (ratio recovers to
+within ~1× tolerance when segmentation survives, 5–16× when it collapses on low-brightness/steep
+frames) and an **unpriced emissive bloom bias on duty** (systematically +0.02…+0.22, ~1.5–4.6×
+tolerance) — both scoped, neither fatal. **Spec consequence:** §8 step 1 should name a "locate
+candidate surface regions" stage (or state that conforming recognisers may assume pre-localised
+input, which excludes the photograph use case), and should acknowledge that a *screen/emissive*
+capture needs a resolution-normalisation (anti-moiré) step the print/synthetic path does not.
+
+## SI-027 · §5/§6.2 · decided-here — Two-path (white-balance-robust) colour for a 2-ink band sheet risks overfitting
+
+SI-020 gave the grid family a two-path ink match — absolute ΔE plus a per-channel diagonal
+white-balance gain — so colour survives an illuminant cast. But it only runs at ≥ 3 inks
+(`MIN_INKS_FOR_GAIN`), its credibility floor against a free 3-parameter gain overfitting a handful
+of colours. 001's band grammar has exactly **two** inks, so its `colour_pair` stayed absolute-only
+— and exp-003's pilot showed that fails on every real photo (0/24 colour agreement): photographed
+inks warm-shift 15–30 ΔE off enrolled. A diagonal gain fit to a 2-ink / 6-observation system is
+nearly free to overfit (it could map almost any dark/light pair onto the two greens), so porting
+SI-020 naively would fabricate colour matches.
+
+**Choice made (Phase 10, `_score_ink_band` in `recogniser/score.py`):** the band `colour_pair` is
+now two-path, `max(absolute, relationship)`, with two guards **replacing** the grid path's
+consensus-over-many-inks robustness that 2 inks cannot provide:
+
+  1. **Tighter gain bounds** than the grid path (`BAND_GAIN_MIN/MAX = 0.6/1.7` vs 0.5/2.0): a 2-ink
+     system has no ratio consensus to reject a bad gain, and a real camera/display white balance is
+     a modest cast, not a 2× channel swing.
+  2. **Gain-invariant corroboration from the sheet's OWN declared relationships** (§3.5
+     `colour_system.relationships`): the measured pair must preserve the **luminance ordering**
+     (light brighter than dark) AND the pair's **hue proximity** (the two inks are near-hue — 001 is
+     two greens), both read from the sheet's expected inks so the rule generalises to any 2-ink band
+     sheet. A positive diagonal gain is order- and (for near-hue inks) proximity-preserving, so
+     these hold under a real cast but fail when the "inks" are two unrelated colours a gain merely
+     mapped close — exactly the overfit the 2-ink system is prone to (a synthetic red/blue pair is
+     rejected in `tests/test_locate.py`). A single-ink fragment (n ≠ 2) disables the relationship
+     path entirely, so it stays byte-identical to the old absolute-only band scoring.
+
+**Diagonal gain ONLY this phase — no bloom model, residual reported (open corollary).** exp-003's
+re-run confirms the pilot's "diagonal-plus-bloom" shift: the two-path lifts mean colour agreement
+from 0.011 (absolute) to 0.205 (relationship), and 0.37–0.74 on the least-bloomed (TrueTone-off,
+bright) frames — but the mean post-gain residual is **ΔE 11.5**, just past the committed ΔE-10
+tolerance, because display **bloom desaturates the light ink toward white** (measured light ink
+≈ [198, 222, 224] BGR) and a diagonal gain cannot model that. Colour recovers only where bloom is
+low; a bloom/saturation term is the deferred next step. **Spec consequence:** §5 should recognise
+that a relationship-mode colour match's *credibility floor is ink-count-dependent* — with only 2
+inks the gain must be corroborated by gain-invariant sheet relationships rather than by
+cross-ink consensus — and that emissive-capture bloom is a **non-diagonal** colour distortion the
+white-balance model does not cover, so a colour-borne identity on an emissive surface needs either
+wider ΔE margins or an explicit bloom term.
