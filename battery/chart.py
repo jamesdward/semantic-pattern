@@ -173,6 +173,54 @@ def line_chart(path, series, x_values, *, xlabel, ylabel, title,
     return path
 
 
+def bar_chart(path, groups, series, *, xlabel, ylabel, title, ymax=None):
+    """Grouped bar chart (added for the cross-grammar confusion summary).
+
+    Reuses the same canvas/frame/legend machinery as ``line_chart``.
+
+    Parameters
+      groups   list of x-category labels (one cluster of bars each).
+      series   dict label -> list of values (length == len(groups)); one coloured
+               bar per series within each group.
+      ymax     optional y-axis top; default 1.15 x the largest value.
+    """
+    img = _canvas()
+    n_groups = max(1, len(groups))
+    n_series = max(1, len(series))
+    all_vals = [float(v) for vals in series.values() for v in vals]
+    top = ymax if ymax is not None else (max(all_vals) if all_vals else 1.0) * 1.15
+    top = max(top, 1.0)
+    ylim = (0.0, top)
+    xlim = (0.0, float(n_groups))
+    yticks = _nice_ticks(0.0, top)
+    _draw_frame(img, xlim, ylim, xlabel, ylabel, title, [], yticks)
+    to_px = _mapper(xlim, ylim)
+    x0, _y0, x1, y1 = _plot_box()
+
+    group_w = (x1 - x0) / n_groups
+    bar_w = group_w * 0.8 / n_series
+    legend_entries = []
+    for si, (label, vals) in enumerate(series.items()):
+        colour = PALETTE[si % len(PALETTE)]
+        legend_entries.append((label, colour))
+        for gi, v in enumerate(vals):
+            gx = x0 + gi * group_w + group_w * 0.1 + si * bar_w
+            ytop = to_px(0.0, float(v))[1]
+            cv2.rectangle(img, (int(round(gx)), int(ytop)),
+                          (int(round(gx + bar_w - 2)), int(y1)), colour, -1)
+            if v:  # count label above the bar
+                cv2.putText(img, f"{int(v)}", (int(round(gx)), int(ytop) - 4),
+                            _FONT, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
+    for gi, g in enumerate(groups):
+        cx = x0 + gi * group_w + group_w / 2.0
+        (tw, _), _ = cv2.getTextSize(g, _FONT, 0.42, 1)
+        cv2.putText(img, g, (int(round(cx - tw / 2)), int(y1) + 20),
+                    _FONT, 0.42, (0, 0, 0), 1, cv2.LINE_AA)
+    _legend(img, legend_entries)
+    cv2.imwrite(str(path), img)
+    return path
+
+
 def hist_chart(path, data, *, xlabel, title, bins=20, xlim=(0.0, 1.0), vlines=None):
     """Overlaid normalised step histograms, one per label in ``data``.
 

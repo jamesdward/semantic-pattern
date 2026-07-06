@@ -1,0 +1,149 @@
+experiment: exp-002-cross-grammar
+timestamp: '2026-07-06T09:32:20.041403+00:00'
+git_commit: d751043b3ca7b228e123b833048c3a479ff84d62
+command: python -m battery.cross --out experiments/exp-002-cross-grammar
+recogniser_version: v0
+verdict_thresholds:
+  identified: 0.7
+  candidate: 0.4
+config:
+  n_bands: 5
+  module_px_001: 200
+  module_px_002: 100
+  cols_002: 10
+  rows_002: 10
+  density_002: 0.45
+  surface_seeds:
+  - 0
+  - 1
+  - 2
+  frags_per_cell: 8
+  fracs:
+  - 0.05
+  - 0.1
+  - 0.2
+  - 0.35
+  - 0.5
+  - 0.75
+  - 1.0
+  rotations:
+  - 0
+  - 30
+  - 90
+  wb_sets:
+  - - neutral
+    - - 1.0
+      - 1.0
+      - 1.0
+  - - warm
+    - - 0.85
+      - 1.0
+      - 1.15
+  - - cool
+    - - 1.15
+      - 1.0
+      - 0.85
+  - - strong_warm
+    - - 0.7
+      - 1.0
+      - 1.3
+  wb_frac: 0.5
+  impostor_fracs:
+  - 0.1
+  - 0.2
+  - 0.35
+  - 0.5
+  - 0.75
+  - 1.0
+  nine_ink_hue_search:
+  - 40
+  - 45
+  - 50
+  - 55
+  - 60
+  - 65
+  - 70
+  - 75
+  - 80
+  - 85
+  - 90
+  - 95
+  - 100
+  - 105
+  - 110
+  - 115
+  - 120
+  - 125
+  - 130
+  - 135
+  - 140
+  - 145
+  - 150
+  - 155
+  - 160
+  - 165
+  - 170
+  - 175
+  - 180
+  base_seed: 20260706
+  quick: false
+surface_seeds:
+- 0
+- 1
+- 2
+sheets:
+- id: bar-cascade-001
+  grammar_version: 1.0.0
+  status: enrolled
+- id: iso-002
+  grammar_version: 0.0.0
+  status: audit-reconstruction
+ink_subsets_002:
+  '0':
+  - '#FAFF54'
+  - '#479F8C'
+  - '#75FB63'
+  - '#EC5F2A'
+  - '#96CBC4'
+  - '#D52EB2'
+  '1':
+  - '#75FB63'
+  - '#EC5F2A'
+  - '#D52EB2'
+  - '#FAFF54'
+  - '#479F8C'
+  '2':
+  - '#75FB63'
+  - '#EC5F2A'
+  - '#D52EB2'
+  - '#C5111D'
+  - '#FAFF54'
+  - '#479F8C'
+impostors:
+- id: canonical_ratio2_duty33
+  family: band
+  frequency_ratio: 2.0
+  duty_cycle_light: 0.3333333333333333
+  phase_step: 0.3333333333333333
+  note: in-memory MODIFIED copy of the 001 sheet (validation bypassed); carries 001's
+    inks so colour cannot discriminate it (SI-016)
+- id: nine_ink_grid
+  family: grid
+  hue_rotation_deg: 165.0
+  min_delta_e_to_002_set: 24.377
+  inks:
+  - '#32FEFF'
+  - '#BB7DA2'
+  - '#009011'
+  - '#A68500'
+  - '#E5C6FF'
+  - '#007C8C'
+  - '#00A8D0'
+  - '#E3B788'
+  - '#E0B5C6'
+  note: 002 structure (grid/alphabet/overprint) rendered in nine inks hue-rotated
+    far from 002's master set; structure is weight-0 in 002, so this should score
+    ~0 -- the structure-only-leak test
+rows: 1269
+skipped_geometry: 123
+csv: raw_results.csv

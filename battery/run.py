@@ -251,10 +251,12 @@ def _sample_and_recognise(surface, frac, rotation, config, module_px, n_bands,
         # Rotated window does not fit the surface (large frac x rotation): a
         # geometric impossibility, honestly skipped and tallied.
         return None, None
-    # The Phase-2 rotated crop can degenerate to a zero-size window when aspect
-    # jitter makes the window far wider than its fitting margin (acute near 90
-    # deg); such a fragment carries no pixels, so skip and tally it rather than
-    # feed an empty array to the measurer.
+    # DEFENSIVE ONLY as of the Phase-7 sampler fix (SI-017 gap 2 closed): the
+    # rotated crop used to degenerate to a zero-size window near 90 deg under
+    # aspect jitter, and this guard skipped+tallied those. sample_fragment now
+    # frames the warp directly onto the w x h window, so it can no longer return
+    # an empty array; the check is kept as a cheap invariant (never fires) rather
+    # than removed, so this frozen exp-001 harness stays byte-reproducible.
     if frag.size == 0 or 0 in frag.shape:
         return None, None
     return frag, info
