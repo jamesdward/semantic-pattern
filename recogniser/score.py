@@ -131,10 +131,45 @@ GAIN_CONSENSUS_REL_TOL = 0.05
 # The relationship (white-balance-gain) path needs at least this many measured
 # inks to be credible evidence of a GLOBAL colour cast (SI-020). With fewer, a
 # free per-channel gain plus assignment freedom can overfit a handful of colours
-# onto any palette -- so below this the relationship path is disabled and only the
-# absolute match stands, keeping cross-grammar discrimination honest (a two-ink
+# onto any palette -- so below this the GRID relationship path is disabled and only
+# the absolute match stands, keeping cross-grammar discrimination honest (a two-ink
 # band fragment cannot borrow the grid ink-set's leniency).
 MIN_INKS_FOR_GAIN = 3
+
+# --- band (2-ink) white-balance relationship path (SI-027) ------------------
+#
+# 001's band grammar has exactly TWO inks, below the grid path's MIN_INKS_FOR_GAIN
+# credibility floor: a per-channel diagonal gain (3 free parameters) fit to a
+# 2-ink / 6-observation system is nearly free to overfit -- it could map almost any
+# dark/light colour pair onto the two greens. exp-003's pilot showed the real need
+# anyway: photographed inks warm-shift 15-30 delta-E off enrolled, so the
+# absolute-only band path fails on every real photo (0/24 colour agreement). SI-027
+# ports two-path colour to band sheets HONESTLY, with two guards replacing the
+# grid path's consensus-over-many-inks robustness that 2 inks cannot provide:
+#
+#   1. TIGHTER gain bounds than the grid path. A 2-ink system has no ratio
+#      consensus to reject a bad gain, so the plausible-illuminant window is
+#      narrowed (a global camera/display white balance is a modest cast, not a 2x
+#      channel swing).
+#   2. GAIN-INVARIANT corroboration from the sheet's OWN declared relationships
+#      (colour_system.relationships, spec 3.5): the measured pair must preserve the
+#      luminance ORDERING (light brighter than dark) AND the pair's HUE PROXIMITY
+#      (the two inks are near-hue -- 001 is two greens). A positive diagonal gain
+#      is order-preserving and, for two already-near-hue inks, proximity-preserving,
+#      so these hold under a real cast but fail when the "inks" are two unrelated
+#      colours a gain merely mapped close -- exactly the overfit the 2-ink system
+#      is prone to. Both are read from the sheet's expected inks, so the rule
+#      generalises to any 2-ink band sheet, not just 001.
+#
+# This phase fits DIAGONAL GAIN ONLY. The pilot's warm shift is roughly
+# diagonal-plus-display-bloom (the light ink brightens disproportionately); a bloom
+# model is deferred (SI-027 open corollary) and the post-gain residual is reported,
+# not hidden.
+BAND_GAIN_MIN = 0.6
+BAND_GAIN_MAX = 1.7
+# Extra hue slack (OpenCV hue units, 0..179) allowed on the measured pair beyond
+# the expected pair's own hue distance before the proximity corroboration fails.
+BAND_HUE_SLACK = 18
 
 # Overprint-consistency verification tolerance (SI-020): Chebyshev distance (RGB
 # units) between a measured overprint colour and the exact multiply of its
@@ -556,6 +591,134 @@ def _score_ink_grid(feature: dict, measurement) -> dict:
     }
 
 
+def _hue_of_bgr(bgr) -> float:
+    """OpenCV HSV hue (0..179) of a mean BGR triple (0..255)."""
+    px = np.array([[[int(round(bgr[0])), int(round(bgr[1])), int(round(bgr[2]))]]],
+                  dtype=np.uint8)
+    return float(cv2.cvtColor(px, cv2.COLOR_BGR2HSV)[0, 0, 0])
+
+
+def _hue_dist(h1: float, h2: float) -> float:
+    """Circular distance between two OpenCV hues (period 180)."""
+    d = abs(h1 - h2) % 180.0
+    return min(d, 180.0 - d)
+
+
+def _score_ink_band(feature: dict, measurement) -> dict:
+    """Two-path ink match for BAND (2-ink) sheets: absolute vs relationship (SI-027).
+
+    Feature agreement is ``max(absolute, relationship)``:
+
+      (a) ABSOLUTE -- the byte-identical pre-SI-027 band match (``_score_ink``):
+          each observed ink to its nearest sheet ink in Lab, mean clipped-linear
+          agreement on delta-E76 / delta_e. A global cast pushes every delta-E up
+          and this collapses (pilot: 0/24).
+
+      (b) RELATIONSHIP -- runs ONLY when both inks are observed (n == 2). Estimate
+          a per-channel diagonal correction gain (sheet/measured ratios, clipped
+          channels excluded), then, GATED on tighter bounds (BAND_GAIN_MIN/MAX)
+          AND sheet-derived gain-invariant corroboration (luminance ordering + hue
+          proximity of the pair, from the expected inks), apply it and re-score
+          delta-E clip-aware. If a modest single diagonal gain explains the shift
+          and the pair relationships survive, this path holds where (a) fell.
+          Diagonal gain ONLY (no bloom model this phase); residual reported.
+
+    A single-ink fragment (n == 1) has no pair to corroborate, so the relationship
+    path is disabled and the result is byte-identical to the old absolute-only
+    band scoring. See the SI-027 constants block.
+    """
+    absolute = _score_ink(feature, measurement)   # byte-identical old path
+
+    expected_hexes = feature.get("expected") or []
+    tol = feature.get("tolerance") or {}
+    delta_e_tol = float(tol.get("delta_e", 10.0)) if isinstance(tol, dict) else 10.0
+    expected_labs = [_hex_to_lab(h) for h in expected_hexes]
+    expected_bgr = [_hex_to_bgr255(h) for h in expected_hexes]
+    observed = measurement.value or []
+    measured_bgr = [np.array([float(c) for c in bgr], dtype=np.float64) for bgr in observed]
+
+    # Relationship path only for a full 2-ink observation against a 2-ink sheet.
+    relationship_ok = len(measured_bgr) == 2 and len(expected_bgr) == 2
+    gain = np.ones(3, dtype=np.float64)
+    gain_fallback_channels = []
+    agreement_rel = 0.0
+    rel_deltas = []
+    corroboration = {"applicable": relationship_ok}
+    if relationship_ok:
+        measured_labs = [_bgr_to_lab(b) for b in measured_bgr]
+        assign = _greedy_assign(measured_labs, expected_labs)   # [(mi, ei, d), ...]
+        m_stack = np.array([measured_bgr[mi] for mi, _, _ in assign])
+        s_stack = np.array([expected_bgr[ei] for _, ei, _ in assign])
+        for ch in range(3):
+            ratios = [s_stack[i, ch] / m_stack[i, ch]
+                      for i in range(len(m_stack))
+                      if CLIP_LOW < m_stack[i, ch] < CLIP_HIGH]
+            if ratios:
+                gain[ch] = float(np.median(ratios))
+            else:
+                gain_fallback_channels.append("BGR"[ch])
+        in_bounds = bool(np.all((gain >= BAND_GAIN_MIN) & (gain <= BAND_GAIN_MAX)))
+
+        # Gain-invariant corroboration from the sheet's own expected inks.
+        # ei -> mi map (which measured ink was assigned to each expected ink).
+        m_for_e = {ei: mi for mi, ei, _ in assign}
+        exp_L = [float(expected_labs[ei][0]) for ei in range(2)]
+        # Expected luminance ordering (which expected ink is the lighter one).
+        e_light, e_dark = (0, 1) if exp_L[0] >= exp_L[1] else (1, 0)
+        meas_L_light = float(_bgr_to_lab(measured_bgr[m_for_e[e_light]])[0])
+        meas_L_dark = float(_bgr_to_lab(measured_bgr[m_for_e[e_dark]])[0])
+        lum_ok = meas_L_light >= meas_L_dark
+        # Hue proximity of the measured pair vs the expected pair (+ slack).
+        exp_hue_dist = _hue_dist(_hue_of_bgr(expected_bgr[0]), _hue_of_bgr(expected_bgr[1]))
+        meas_hue_dist = _hue_dist(_hue_of_bgr(measured_bgr[0]), _hue_of_bgr(measured_bgr[1]))
+        hue_ok = meas_hue_dist <= exp_hue_dist + BAND_HUE_SLACK
+        corroboration = {"applicable": True, "luminance_order_preserved": lum_ok,
+                         "hue_proximity_preserved": hue_ok,
+                         "expected_pair_hue_dist": round(exp_hue_dist, 2),
+                         "measured_pair_hue_dist": round(meas_hue_dist, 2)}
+
+        relationship_ok = in_bounds and lum_ok and hue_ok
+        # Apply the gain and re-score delta-E clip-aware (a clipped bright channel
+        # is a lower bound; consistency with the sheet ink counts as a match).
+        clip_masks = [tuple(bool(v >= CLIP_HIGH) for v in b) for b in measured_bgr]
+        corrected = [np.clip(b * gain, 0.0, 255.0) for b in measured_bgr]
+        dist_rel = [[_clip_aware_delta_e(c, mask, expected_bgr[ei], expected_labs[ei])
+                     for ei in range(len(expected_labs))]
+                    for c, mask in zip(corrected, clip_masks)]
+        assign_rel = _greedy_assign_matrix(dist_rel)
+        rel_deltas = [d for _, _, d in assign_rel]
+        per_ink_rel = [agreement_linear(d, 0.0, delta_e_tol) for d in rel_deltas]
+        agreement_rel = float(np.mean(per_ink_rel)) if relationship_ok else 0.0
+    else:
+        in_bounds = False
+
+    agreement = max(absolute["agreement"], agreement_rel)
+    implied_applied_gain = [round(float(1.0 / g), 4) if g != 0 else None for g in gain]
+    n_clipped = sum(1 for b in measured_bgr if any(v >= CLIP_HIGH for v in b))
+    detail = dict(absolute["detail"])
+    detail.update({
+        "path": "max(absolute, relationship)  (SI-027, band two-path)",
+        "agreement_absolute": round(absolute["agreement"], 4),
+        "agreement_relationship": round(agreement_rel, 4),
+        "mean_delta_e_relationship": (round(float(np.mean(rel_deltas)), 3)
+                                      if rel_deltas else None),
+        "correction_gain_bgr": [round(float(g), 4) for g in gain],
+        "implied_applied_gain_bgr": implied_applied_gain,
+        "gain_in_bounds": in_bounds,
+        "relationship_applicable": relationship_ok,
+        "n_inks": len(measured_bgr),
+        "corroboration": corroboration,
+        "clipping": {"clip_high": CLIP_HIGH, "clip_low": CLIP_LOW,
+                     "n_clipped_inks": n_clipped,
+                     "gain_fallback_channels": gain_fallback_channels,
+                     "note": "diagonal gain only this phase (no bloom model, SI-027); "
+                             "clipped bright channels scored one-sidedly after correction"},
+        "rank_correlation": None,   # not meaningful for a 2-ink system; reported None
+    })
+    return {"agreement": agreement, "expected": expected_hexes,
+            "measured": absolute["measured"], "detail": detail}
+
+
 def _resolve_relation(feature: dict, measurements: dict):
     """Return (measured_diff, expected, tolerance, n, detail) for a relation_* feature.
 
@@ -656,10 +819,12 @@ def score_sheet(sheet: dict, measured: dict) -> dict:
                 entry["note"] = "no inks observed"
                 per_feature.append(entry)
                 continue
-            # Grid sheets use the two-path (absolute + white-balance-relationship)
-            # match (SI-020); band sheets keep the byte-identical v0 absolute match.
+            # Grid sheets use the many-ink two-path match (SI-020); band sheets use
+            # the 2-ink two-path match (SI-027). Both reduce to the byte-identical
+            # absolute path when the relationship path is inapplicable (grid: < 3
+            # inks; band: != 2 inks), so single-ink fragments are unchanged.
             ink = (_score_ink_grid(feature, m) if structure_type == "grid"
-                   else _score_ink(feature, m))
+                   else _score_ink_band(feature, m))
             agree = ink["agreement"]
             n = m.n
             entry["measured"] = ink["measured"]

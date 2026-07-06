@@ -70,7 +70,7 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp", ".heic"
 BAND_FEATURES = ["cascade_ratio", "duty", "phase_duty_identity", "colour_pair"]
 
 # Manifest condition keys logged verbatim (order fixes the CSV column order).
-CONDITION_KEYS = ["lighting", "angle_deg", "distance", "printer", "paper"]
+CONDITION_KEYS = ["lighting", "angle_deg", "distance", "medium", "printer", "paper"]
 
 CSV_FIELDS = [
     # provenance + status

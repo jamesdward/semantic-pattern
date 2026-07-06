@@ -16,3 +16,9 @@ dist/
 
 # Scratch output (experiments/ results ARE committed — they are the published data)
 scratch/
+
+# Raw field photos are too large for git; the manifest + results are the record
+photos/*.jpg
+photos/*.jpeg
+photos/*.HEIC
+photos/*.heic
